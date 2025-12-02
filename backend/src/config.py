@@ -21,6 +21,12 @@ DEFAULT_MOTIF_SENSITIVITY = float(os.environ.get("DEFAULT_MOTIF_SENSITIVITY", "0
 DEFAULT_MOTIF_BARS = float(os.environ.get("DEFAULT_MOTIF_BARS", "2.0"))
 DEFAULT_MOTIF_HOP_BARS = float(os.environ.get("DEFAULT_MOTIF_HOP_BARS", "1.0"))
 
+# Call-response detection parameters
+DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS = float(os.environ.get("DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS", "0.5"))
+DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS = float(os.environ.get("DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS", "4.0"))
+DEFAULT_CALL_RESPONSE_MIN_SIMILARITY = float(os.environ.get("DEFAULT_CALL_RESPONSE_MIN_SIMILARITY", "0.7"))
+DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE = float(os.environ.get("DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE", "0.5"))
+
 
 def get_settings() -> dict:
     """Get application settings as a dictionary."""

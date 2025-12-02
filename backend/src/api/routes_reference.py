@@ -8,12 +8,19 @@ from typing import Dict
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 
-from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS
+from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
 from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import detect_motifs
-from config import DEFAULT_MOTIF_SENSITIVITY
+from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+from config import (
+    DEFAULT_MOTIF_SENSITIVITY,
+    DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
+    DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
+    DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
+    DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -151,11 +158,26 @@ async def analyze_reference(
         REFERENCE_MOTIFS[reference_id] = (instances, groups)
         logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
         
+        # Detect call-response relationships
+        logger.info(f"Detecting call-response relationships for reference {reference_id}")
+        call_response_config = CallResponseConfig(
+            min_offset_bars=DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
+            max_offset_bars=DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
+            min_similarity=DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
+            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+        )
+        call_response_pairs = detect_call_response(instances, regions, bundle.bpm, config=call_response_config)
+        
+        # Store call-response pairs
+        REFERENCE_CALL_RESPONSE[reference_id] = call_response_pairs
+        logger.info(f"Detected {len(call_response_pairs)} call-response pairs for reference {reference_id}")
+        
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
             "motifInstanceCount": len(instances),
             "motifGroupCount": len(groups),
+            "callResponseCount": len(call_response_pairs),
             "status": "ok"
         }
     
@@ -278,4 +300,58 @@ async def get_motifs(reference_id: str):
         "groups": groups_dict,
         "instanceCount": len(instances_dict),
         "groupCount": len(groups_dict)
+    }
+
+
+@router.get("/{reference_id}/call-response")
+async def get_call_response(reference_id: str):
+    """
+    Get detected call-response pairs for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with call-response pairs
+    """
+    logger.info(f"Getting call-response pairs for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if call-response pairs have been detected
+    if reference_id not in REFERENCE_CALL_RESPONSE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Call-response pairs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    pairs = REFERENCE_CALL_RESPONSE[reference_id]
+    
+    # Convert CallResponsePair dataclasses to dictionaries for JSON serialization
+    pairs_dict = []
+    for pair in pairs:
+        pairs_dict.append({
+            "id": pair.id,
+            "fromMotifId": pair.from_motif_id,
+            "toMotifId": pair.to_motif_id,
+            "fromStemRole": pair.from_stem_role,
+            "toStemRole": pair.to_stem_role,
+            "fromTime": pair.from_time,
+            "toTime": pair.to_time,
+            "timeOffset": pair.time_offset,
+            "confidence": pair.confidence,
+            "regionId": pair.region_id,
+            "isInterStem": pair.is_inter_stem,
+            "isIntraStem": pair.is_intra_stem
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "pairs": pairs_dict,
+        "count": len(pairs_dict)
     }

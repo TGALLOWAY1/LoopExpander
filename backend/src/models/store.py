@@ -14,3 +14,6 @@ REFERENCE_REGIONS: Dict[str, List[Region]] = {}
 # Maps reference_id -> (instances, groups)
 REFERENCE_MOTIFS: Dict[str, tuple] = {}
 
+# In-memory storage for detected call-response pairs per reference
+REFERENCE_CALL_RESPONSE: Dict[str, List] = {}
+
