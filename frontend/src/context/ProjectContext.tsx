@@ -1,7 +1,7 @@
 /**
  * Project context for managing reference track and regions state.
  */
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 import { 
   Region, 
   MotifInstance, 

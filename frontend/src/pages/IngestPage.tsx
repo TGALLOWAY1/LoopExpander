@@ -79,7 +79,7 @@ function IngestPage({ onAnalysisComplete }: IngestPageProps): JSX.Element {
       setStatus('analyzing');
 
       // Step 2: Analyze
-      const analyzeResult = await analyzeReference(uploadResult.referenceId);
+      await analyzeReference(uploadResult.referenceId);
       setStatusMessage(`Analysis complete. Fetching regions...`);
 
       // Step 3: Fetch regions

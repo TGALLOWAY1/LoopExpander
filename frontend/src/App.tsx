@@ -1,7 +1,7 @@
 /**
  * Main App component.
  */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
 import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
