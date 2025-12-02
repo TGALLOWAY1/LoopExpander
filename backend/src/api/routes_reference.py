@@ -40,10 +40,81 @@ router = APIRouter(prefix="/reference", tags=["reference"])
 TEMP_DIR = Path("tmp/reference")
 
 
+def _get_project_root() -> Path:
+    """Get the project root directory (3 levels up from this file: api -> src -> backend -> root)."""
+    return Path(__file__).resolve().parents[3]
+
+
+def _get_gallium_test_paths() -> Dict[str, Path]:
+    """Get file paths for Gallium test stems."""
+    root = _get_project_root() / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
+    return {
+        "drums": root / "Drums.wav",
+        "bass": root / "Bass.wav",
+        "vocals": root / "Vocals.wav",
+        "instruments": root / "Instruments.wav",
+        "full_mix": root / "Full Mix.wav",
+    }
+
+
 @router.get("/ping")
 async def ping():
     """Health check endpoint for reference API."""
     return {"message": "reference api ok"}
+
+
+@router.post("/dev/gallium")
+async def create_gallium_dev_reference():
+    """
+    Dev-only endpoint to load Gallium test stems from disk.
+    
+    This endpoint loads the test audio files from the test data directory
+    and processes them through the same upload/analysis pipeline as the
+    normal upload endpoint.
+    
+    Returns:
+        JSON with referenceId, bpm, duration, and key (same format as /upload)
+    """
+    logger.info("Loading Gallium test stems from disk")
+    
+    # Get test file paths
+    paths = _get_gallium_test_paths()
+    
+    # Validate all files exist
+    for role, path in paths.items():
+        if not path.exists():
+            logger.error(f"Missing Gallium test file for {role}: {path}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Missing Gallium test file for {role}: {path}"
+            )
+    
+    # Generate reference ID
+    reference_id = str(uuid.uuid4())
+    logger.info(f"Creating dev reference with ID: {reference_id}")
+    
+    try:
+        # Load reference bundle directly from file paths
+        logger.info(f"Loading reference bundle from test files")
+        bundle = load_reference_bundle(paths)
+        
+        # Store in memory (same as normal upload)
+        REFERENCE_BUNDLES[reference_id] = bundle
+        logger.info(f"Stored reference bundle {reference_id}: {bundle}")
+        
+        return {
+            "referenceId": reference_id,
+            "bpm": bundle.bpm,
+            "duration": bundle.full_mix.duration,
+            "key": bundle.key
+        }
+    
+    except Exception as e:
+        logger.error(f"Error loading Gallium test reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load Gallium test reference: {str(e)}"
+        )
 
 
 @router.post("/upload")
