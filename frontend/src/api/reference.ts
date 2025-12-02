@@ -21,6 +21,90 @@ export interface Region {
 }
 
 /**
+ * Motif instance type matching backend model.
+ */
+export interface MotifInstance {
+  id: string;
+  stemRole: string; // "drums", "bass", "vocals", "instruments", "full_mix"
+  startTime: number; // seconds
+  endTime: number; // seconds
+  duration: number; // seconds
+  groupId: string | null;
+  isVariation: boolean;
+  regionIds: string[];
+}
+
+/**
+ * Motif group type matching backend model.
+ */
+export interface MotifGroup {
+  id: string;
+  label: string | null;
+  memberIds: string[];
+  memberCount: number;
+  variationCount: number;
+}
+
+/**
+ * Motifs response type.
+ */
+export interface MotifsResponse {
+  referenceId: string;
+  instances: MotifInstance[];
+  groups: MotifGroup[];
+  instanceCount: number;
+  groupCount: number;
+}
+
+/**
+ * Call-response pair type matching backend model.
+ */
+export interface CallResponsePair {
+  id: string;
+  fromMotifId: string;
+  toMotifId: string;
+  fromStemRole: string;
+  toStemRole: string;
+  fromTime: number; // seconds
+  toTime: number; // seconds
+  timeOffset: number; // seconds
+  confidence: number; // 0.0 to 1.0
+  regionId: string | null;
+  isInterStem: boolean;
+  isIntraStem: boolean;
+}
+
+/**
+ * Call-response response type.
+ */
+export interface CallResponseResponse {
+  referenceId: string;
+  pairs: CallResponsePair[];
+  count: number;
+}
+
+/**
+ * Fill type matching backend model.
+ */
+export interface Fill {
+  id: string;
+  time: number; // seconds
+  stemRoles: string[];
+  regionId: string;
+  confidence: number; // 0.0 to 1.0
+  fillType: string | null; // e.g., "drum_fill", "bass_slide", "vocal_adlib"
+}
+
+/**
+ * Fills response type.
+ */
+export interface FillsResponse {
+  referenceId: string;
+  fills: Fill[];
+  count: number;
+}
+
+/**
  * Upload reference track stems and full mix.
  * 
  * @param files - Object containing 5 audio files
@@ -98,5 +182,80 @@ export async function fetchRegions(referenceId: string): Promise<Region[]> {
 
   const data = await response.json();
   return data.regions || [];
+}
+
+/**
+ * Fetch detected motifs for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @param sensitivity - Optional sensitivity parameter (0.0 = strict, 1.0 = loose)
+ * @returns Promise with motifs response
+ */
+export async function getMotifs(
+  referenceId: string,
+  sensitivity?: number
+): Promise<MotifsResponse> {
+  const url = new URL(`${API_BASE_URL}/api/reference/${referenceId}/motifs`);
+  if (sensitivity !== undefined) {
+    url.searchParams.set('sensitivity', sensitivity.toString());
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch motifs' }));
+    throw new Error(error.detail || `Failed to fetch motifs with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch detected call-response pairs for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @returns Promise with call-response response
+ */
+export async function getCallResponse(referenceId: string): Promise<CallResponseResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/call-response`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch call-response pairs' }));
+    throw new Error(error.detail || `Failed to fetch call-response pairs with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch detected fills for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @returns Promise with fills response
+ */
+export async function getFills(referenceId: string): Promise<FillsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/fills`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch fills' }));
+    throw new Error(error.detail || `Failed to fetch fills with status ${response.status}`);
+  }
+
+  return response.json();
 }
 
