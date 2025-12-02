@@ -194,6 +194,34 @@
   margin-top: 0.25rem;
 }
 
+.motif-pause-control {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.motif-pause-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.motif-pause-button:hover {
+  background-color: #f0f0f0;
+  border-color: #999;
+}
+
+.motif-paused-indicator {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  color: #666;
+}
+
 /* Main content layout */
 .region-map-main-content {
   display: grid;
