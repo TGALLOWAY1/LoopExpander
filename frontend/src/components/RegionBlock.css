@@ -1,0 +1,39 @@
+/**
+ * Styles for RegionBlock component.
+ */
+.region-block {
+  min-width: 80px;
+  height: 80px;
+  border: 2px solid;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: default;
+}
+
+.region-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.region-block-content {
+  text-align: center;
+  width: 100%;
+}
+
+.region-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.region-time {
+  font-size: 0.75rem;
+  color: #666;
+}
+
