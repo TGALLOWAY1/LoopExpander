@@ -27,6 +27,7 @@ function RegionMapPage(): JSX.Element {
   const [loadingFills, setLoadingFills] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [motifSensitivity, setMotifSensitivity] = useState(0.5);
+  const [isMotifPaused, setIsMotifPaused] = useState(false);
   const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
   const [highlightedPairId, setHighlightedPairId] = useState<string | null>(null);
 
@@ -56,10 +57,15 @@ function RegionMapPage(): JSX.Element {
       return;
     }
 
-    console.log('[RegionMapPage] useEffect triggered:', { referenceId, regionsLength: regions.length, motifSensitivity });
+    console.log('[RegionMapPage] useEffect triggered:', { referenceId, regionsLength: regions.length, motifSensitivity, isMotifPaused });
 
-    // Fetch motifs with current sensitivity
-    loadMotifs(motifSensitivity);
+    // Skip motif fetch if paused
+    if (isMotifPaused) {
+      console.log('[Motifs] Skipping motif fetch because analysis is paused');
+    } else {
+      // Fetch motifs with current sensitivity
+      loadMotifs(motifSensitivity);
+    }
 
     // Fetch call-response pairs
     const loadCallResponse = async () => {
@@ -93,7 +99,7 @@ function RegionMapPage(): JSX.Element {
     loadFills();
     // Only depend on input values, not on the results or setter functions
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceId, regions.length, motifSensitivity]);
+  }, [referenceId, regions.length, motifSensitivity, isMotifPaused]);
 
   // Handle sensitivity change (debounced on slider release)
   const handleSensitivityChange = useCallback((newSensitivity: number) => {
@@ -177,6 +183,20 @@ function RegionMapPage(): JSX.Element {
             <div className="sensitivity-labels">
               <span>Strict (0.0)</span>
               <span>Loose (1.0)</span>
+            </div>
+            <div className="motif-pause-control" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className="motif-pause-button"
+                onClick={() => setIsMotifPaused(prev => !prev)}
+              >
+                {isMotifPaused ? 'Resume Motif Analysis' : 'Pause Motif Analysis'}
+              </button>
+              {isMotifPaused && (
+                <span className="motif-paused-indicator" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                  Motif analysis paused
+                </span>
+              )}
             </div>
           </div>
         </div>
