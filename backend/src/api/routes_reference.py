@@ -3,16 +3,21 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 
-from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE, REFERENCE_FILLS
+from models.store import (
+    REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
+    REFERENCE_CALL_RESPONSE, REFERENCE_FILLS, REFERENCE_MOTIF_INSTANCES_RAW
+)
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
 from analysis.region_detector.region_detector import detect_regions
-from analysis.motif_detector.motif_detector import detect_motifs
+from analysis.motif_detector.motif_detector import (
+    detect_motifs, MotifInstance, _cluster_motifs, _align_motifs_with_regions
+)
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from config import (
@@ -158,6 +163,23 @@ async def analyze_reference(
         logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity}")
         instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
         
+        # Store raw instances (before clustering) for re-clustering with different sensitivity
+        # Create deep copies to avoid modifying the clustered instances
+        raw_instances = []
+        for inst in instances:
+            raw_inst = MotifInstance(
+                id=inst.id,
+                stem_role=inst.stem_role,
+                start_time=inst.start_time,
+                end_time=inst.end_time,
+                features=inst.features.copy(),  # Copy numpy array
+                group_id=None,  # Reset clustering
+                is_variation=False,  # Reset variation flag
+                region_ids=inst.region_ids.copy()  # Keep region alignment
+            )
+            raw_instances.append(raw_inst)
+        REFERENCE_MOTIF_INSTANCES_RAW[reference_id] = raw_instances
+        
         # Store motifs
         REFERENCE_MOTIFS[reference_id] = (instances, groups)
         logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
@@ -259,17 +281,21 @@ async def get_regions(reference_id: str):
 
 
 @router.get("/{reference_id}/motifs")
-async def get_motifs(reference_id: str):
+async def get_motifs(
+    reference_id: str,
+    sensitivity: Optional[float] = Query(None, ge=0.0, le=1.0, description="Optional: Re-cluster motifs with different sensitivity (0.0 = strict, 1.0 = loose)")
+):
     """
     Get detected motifs for a reference bundle.
     
     Args:
         reference_id: ID of the reference bundle
+        sensitivity: Optional sensitivity parameter to re-cluster motifs with different threshold
     
     Returns:
         JSON with motif instances and groups
     """
-    logger.info(f"Getting motifs for reference_id: {reference_id}")
+    logger.info(f"Getting motifs for reference_id: {reference_id}, sensitivity={sensitivity}")
     
     # Check if reference exists
     if reference_id not in REFERENCE_BUNDLES:
@@ -279,13 +305,48 @@ async def get_motifs(reference_id: str):
         )
     
     # Check if motifs have been detected
-    if reference_id not in REFERENCE_MOTIFS:
+    if reference_id not in REFERENCE_MOTIF_INSTANCES_RAW:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Motifs not found for reference {reference_id}. Run /analyze first."
         )
     
-    instances, groups = REFERENCE_MOTIFS[reference_id]
+    # Get regions for re-alignment
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    raw_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+    
+    # If sensitivity is provided and different from stored, re-cluster
+    if sensitivity is not None:
+        logger.info(f"Re-clustering motifs with sensitivity={sensitivity}")
+        # Create fresh copies of instances for re-clustering
+        instances_to_cluster = []
+        for raw_inst in raw_instances:
+            fresh_inst = MotifInstance(
+                id=raw_inst.id,
+                stem_role=raw_inst.stem_role,
+                start_time=raw_inst.start_time,
+                end_time=raw_inst.end_time,
+                features=raw_inst.features.copy(),
+                group_id=None,
+                is_variation=False,
+                region_ids=[]
+            )
+            instances_to_cluster.append(fresh_inst)
+        
+        # Re-cluster with new sensitivity
+        instances, groups = _cluster_motifs(instances_to_cluster, sensitivity)
+        
+        # Re-align with regions
+        _align_motifs_with_regions(instances, regions)
+    else:
+        # Use stored clustering
+        instances, groups = REFERENCE_MOTIFS[reference_id]
     
     # Convert MotifInstance dataclasses to dictionaries for JSON serialization
     instances_dict = []
