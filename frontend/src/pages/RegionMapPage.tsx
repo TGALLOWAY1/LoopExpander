@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { RegionBlock } from '../components/RegionBlock';
 import { CallResponsePanel } from '../components/CallResponsePanel';
+import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
 import { getMotifs, getCallResponse, getFills } from '../api/reference';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
@@ -265,8 +266,15 @@ function RegionMapPage(): JSX.Element {
             </div>
           </div>
 
-          {/* Call-Response Panel */}
+          {/* Right Panel Section */}
           <div className="call-response-section">
+            <MotifGroupsPanel
+              groups={motifGroups}
+              instances={motifs}
+              regions={regions}
+              onGroupClick={setHighlightedGroupId}
+              highlightedGroupId={highlightedGroupId}
+            />
             <CallResponsePanel
               pairs={callResponsePairs}
               regions={regions}
