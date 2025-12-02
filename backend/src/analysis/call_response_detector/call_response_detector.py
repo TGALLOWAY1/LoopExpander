@@ -314,6 +314,10 @@ def detect_call_response(
     
     # For each motif as a potential call
     for call_motif in motifs:
+        # Skip full_mix as call - prioritize cross-stem relationships
+        if call_motif.stem_role == "full_mix":
+            continue
+        
         # Find potential responses within time window
         potential_responses = _find_potential_responses(
             call_motif,
@@ -325,15 +329,39 @@ def detect_call_response(
         
         # Evaluate each potential response
         for response_motif, offset_seconds in potential_responses:
+            # Skip self-instance pairs (defensive check)
+            if call_motif.id == response_motif.id:
+                continue
+            
+            # Skip full_mix → full_mix pairs
+            if call_motif.stem_role == "full_mix" and response_motif.stem_role == "full_mix":
+                continue
+            
+            # Enforce minimum time offset (defensive check - should already be filtered by _find_potential_responses)
+            if abs(offset_seconds) < min_offset_seconds:
+                continue
+            
+            # Convert offset to bars for rhythmic alignment (needed for logging and confidence)
+            offset_bars = (offset_seconds / 60.0) * bpm / 4.0  # Convert seconds to bars
+            
             # Compute similarity
             similarity = _compute_similarity(call_motif.features, response_motif.features)
+            
+            # Debug logging
+            logger.debug(
+                "Call/response candidate",
+                extra={
+                    "from_role": call_motif.stem_role,
+                    "to_role": response_motif.stem_role,
+                    "time_offset": round(offset_seconds, 3),
+                    "offset_bars": round(offset_bars, 3),
+                    "similarity": round(similarity, 3),
+                },
+            )
             
             # Skip if similarity is too low
             if similarity < config.min_similarity:
                 continue
-            
-            # Convert offset to bars for rhythmic alignment
-            offset_bars = (offset_seconds / 60.0) * bpm / 4.0  # Convert seconds to bars
             
             # Compute confidence
             confidence = _compute_confidence(similarity, offset_bars, config)
