@@ -37,3 +37,42 @@
   color: #666;
 }
 
+.motif-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.motif-marker {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid;
+  top: 4px;
+  transform: translateX(-50%);
+  pointer-events: all;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  z-index: 10;
+}
+
+.motif-marker:hover {
+  transform: translateX(-50%) scale(1.5);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+}
+
+.motif-marker.highlighted {
+  transform: translateX(-50%) scale(1.3);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+  z-index: 15;
+}
+
+.motif-marker.variation {
+  border-style: dashed;
+}
+
