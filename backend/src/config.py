@@ -16,6 +16,11 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 MIN_BOUNDARY_GAP_SEC = float(os.environ.get("MIN_BOUNDARY_GAP_SEC", "4.0"))
 MIN_REGION_DURATION_SEC = float(os.environ.get("MIN_REGION_DURATION_SEC", "8.0"))
 
+# Motif detection parameters
+DEFAULT_MOTIF_SENSITIVITY = float(os.environ.get("DEFAULT_MOTIF_SENSITIVITY", "0.5"))
+DEFAULT_MOTIF_BARS = float(os.environ.get("DEFAULT_MOTIF_BARS", "2.0"))
+DEFAULT_MOTIF_HOP_BARS = float(os.environ.get("DEFAULT_MOTIF_HOP_BARS", "1.0"))
+
 
 def get_settings() -> dict:
     """Get application settings as a dictionary."""

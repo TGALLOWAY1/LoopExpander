@@ -5,13 +5,15 @@ import uuid
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 
-from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS
+from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
 from analysis.region_detector.region_detector import detect_regions
+from analysis.motif_detector.motif_detector import detect_motifs
+from config import DEFAULT_MOTIF_SENSITIVITY
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -107,15 +109,19 @@ async def upload_reference(
 
 
 @router.post("/{reference_id}/analyze")
-async def analyze_reference(reference_id: str):
+async def analyze_reference(
+    reference_id: str,
+    motif_sensitivity: float = Query(DEFAULT_MOTIF_SENSITIVITY, ge=0.0, le=1.0, description="Motif clustering sensitivity (0.0 = strict, 1.0 = loose)")
+):
     """
-    Analyze a reference bundle to detect regions.
+    Analyze a reference bundle to detect regions and motifs.
     
     Args:
         reference_id: ID of the reference bundle to analyze
+        motif_sensitivity: Motif clustering sensitivity (0.0 = strict, 1.0 = loose)
     
     Returns:
-        JSON with analysis status and region count
+        JSON with analysis status, region count, and motif counts
     """
     logger.info(f"Starting analysis for reference_id: {reference_id}")
     
@@ -137,9 +143,19 @@ async def analyze_reference(reference_id: str):
         REFERENCE_REGIONS[reference_id] = regions
         logger.info(f"Detected {len(regions)} regions for reference {reference_id}")
         
+        # Detect motifs
+        logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity}")
+        instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+        
+        # Store motifs
+        REFERENCE_MOTIFS[reference_id] = (instances, groups)
+        logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
+        
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
+            "motifInstanceCount": len(instances),
+            "motifGroupCount": len(groups),
             "status": "ok"
         }
     
@@ -199,4 +215,67 @@ async def get_regions(reference_id: str):
         "referenceId": reference_id,
         "regions": regions_dict,
         "count": len(regions_dict)
+    }
+
+
+@router.get("/{reference_id}/motifs")
+async def get_motifs(reference_id: str):
+    """
+    Get detected motifs for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with motif instances and groups
+    """
+    logger.info(f"Getting motifs for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if motifs have been detected
+    if reference_id not in REFERENCE_MOTIFS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Motifs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    instances, groups = REFERENCE_MOTIFS[reference_id]
+    
+    # Convert MotifInstance dataclasses to dictionaries for JSON serialization
+    instances_dict = []
+    for inst in instances:
+        instances_dict.append({
+            "id": inst.id,
+            "stemRole": inst.stem_role,
+            "startTime": inst.start_time,
+            "endTime": inst.end_time,
+            "duration": inst.duration,
+            "groupId": inst.group_id,
+            "isVariation": inst.is_variation,
+            "regionIds": inst.region_ids
+        })
+    
+    # Convert MotifGroup dataclasses to dictionaries
+    groups_dict = []
+    for group in groups:
+        groups_dict.append({
+            "id": group.id,
+            "label": group.label,
+            "memberIds": [m.id for m in group.members],
+            "memberCount": len(group.members),
+            "variationCount": len(group.variations)
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "instances": instances_dict,
+        "groups": groups_dict,
+        "instanceCount": len(instances_dict),
+        "groupCount": len(groups_dict)
     }
