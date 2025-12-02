@@ -12,37 +12,81 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def snap_bpm_to_grid(raw_bpm: float) -> float:
+    """
+    Snap a raw BPM estimate to a musically sensible grid.
+    
+    Heuristic:
+    - Round to nearest integer.
+    - If result is below 70, assume we detected half-time and double it.
+    - If result is above 180, assume we detected double-time and halve it.
+    
+    Args:
+        raw_bpm: Raw BPM estimate from tempo detection
+    
+    Returns:
+        Snapped BPM value
+    """
+    if raw_bpm <= 0:
+        return raw_bpm
+    
+    snapped = float(round(raw_bpm))
+    
+    # Simple half-time / double-time correction
+    if snapped < 70.0:
+        snapped *= 2.0
+        logger.debug(f"BPM below 70, assuming half-time: {snapped:.2f}")
+    elif snapped > 180.0:
+        snapped *= 0.5
+        logger.debug(f"BPM above 180, assuming double-time: {snapped:.2f}")
+    
+    logger.info(f"Snapped raw BPM {raw_bpm:.2f} -> {snapped:.2f}")
+    return snapped
+
+
 def estimate_bpm(audio_file: AudioFile) -> float:
     """
-    Estimate BPM from an audio file.
+    Estimate BPM from the full_mix audio.
+    
+    - Convert to mono.
+    - Use librosa.beat.tempo with a median aggregate for robustness.
+    - Snap the resulting BPM to a sensible grid.
     
     Args:
         audio_file: AudioFile instance to analyze
     
     Returns:
-        Estimated BPM as float
+        Snapped BPM as float
     """
-    logger.info(f"Estimating BPM from {audio_file.role} stem")
+    logger.info(f"Estimating BPM from {audio_file.role} stem with librosa.beat.tempo")
     
-    # Convert to mono if needed for librosa tempo estimation
-    if audio_file.samples.ndim > 1:
-        # Multi-channel: use first channel or convert to mono
-        if audio_file.samples.shape[0] > 1:
-            samples = np.mean(audio_file.samples, axis=0)
+    y = audio_file.samples
+    sr = audio_file.sr
+    
+    # Ensure mono
+    if y.ndim == 2:
+        # (channels, samples) or (samples, channels); handle most common shape
+        if y.shape[0] < y.shape[1]:
+            y_mono = np.mean(y, axis=0)
         else:
-            samples = audio_file.samples[0]
+            y_mono = np.mean(y, axis=1)
     else:
-        samples = audio_file.samples
+        y_mono = y
     
-    # Use librosa's tempo estimation
-    # This returns a tempo estimate in BPM
-    tempo, _ = librosa.beat.beat_track(y=samples, sr=audio_file.sr)
+    # Use librosa.beat.tempo with median aggregate for robustness
+    tempo_array = librosa.beat.tempo(y=y_mono, sr=sr, aggregate=np.median)
     
-    # librosa.beat.beat_track returns tempo as a numpy array, get the first value
-    bpm = float(tempo) if isinstance(tempo, (np.ndarray, list)) else float(tempo)
+    if isinstance(tempo_array, (list, np.ndarray)):
+        raw_bpm = float(tempo_array[0])
+    else:
+        raw_bpm = float(tempo_array)
     
-    logger.info(f"Estimated BPM: {bpm:.1f}")
-    return bpm
+    logger.info(f"Estimated raw BPM from librosa.beat.tempo: {raw_bpm:.2f}")
+    
+    snapped_bpm = snap_bpm_to_grid(raw_bpm)
+    logger.info(f"Final BPM (snapped): {snapped_bpm:.2f}")
+    
+    return snapped_bpm
 
 
 def estimate_key(audio_file: AudioFile) -> Optional[str]:
