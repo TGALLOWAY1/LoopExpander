@@ -1,0 +1,36 @@
+/**
+ * Styles for App component.
+ */
+.header-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #666;
+  background-color: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-button:hover:not(:disabled) {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.nav-button.active {
+  background-color: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
