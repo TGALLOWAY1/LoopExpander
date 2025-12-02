@@ -56,6 +56,8 @@ function RegionMapPage(): JSX.Element {
       return;
     }
 
+    console.log('[RegionMapPage] useEffect triggered:', { referenceId, regionsLength: regions.length, motifSensitivity });
+
     // Fetch motifs with current sensitivity
     loadMotifs(motifSensitivity);
 
@@ -89,7 +91,9 @@ function RegionMapPage(): JSX.Element {
 
     loadCallResponse();
     loadFills();
-  }, [referenceId, regions.length, setCallResponsePairs, setFills, loadMotifs, motifSensitivity]);
+    // Only depend on input values, not on the results or setter functions
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceId, regions.length, motifSensitivity]);
 
   // Handle sensitivity change (debounced on slider release)
   const handleSensitivityChange = useCallback((newSensitivity: number) => {
