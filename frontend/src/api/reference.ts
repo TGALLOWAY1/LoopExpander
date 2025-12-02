@@ -138,6 +138,27 @@ export async function uploadReference(files: {
 }
 
 /**
+ * Dev-only: Create a reference from Gallium test stems on disk.
+ * 
+ * @returns Promise with referenceId, bpm, duration, and key (same format as uploadReference)
+ */
+export async function createGalliumDevReference(): Promise<{ referenceId: string; bpm: number; duration: number; key: string | null }> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/dev/gallium`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to create Gallium dev reference' }));
+    throw new Error(error.detail || `Failed to create Gallium dev reference with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Analyze a reference bundle to detect regions.
  * 
  * @param referenceId - ID of the reference bundle to analyze
