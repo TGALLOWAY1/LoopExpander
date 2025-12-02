@@ -1,0 +1,142 @@
+/**
+ * Styles for MotifGroupsPanel component.
+ */
+.motif-groups-panel {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-height: 600px;
+  overflow-y: auto;
+  margin-bottom: 1.5rem;
+}
+
+.motif-groups-panel h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: #333;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.motif-groups-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.motif-groups-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.motif-group-card {
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.motif-group-card.highlighted {
+  background-color: #e3f2fd;
+  border-color: #2196f3;
+  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+}
+
+.motif-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.motif-group-header:hover {
+  background-color: #f0f0f0;
+}
+
+.motif-group-card.highlighted .motif-group-header:hover {
+  background-color: #d1e7ff;
+}
+
+.motif-group-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.motif-group-id {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.motif-group-count {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.motif-group-toggle {
+  font-size: 0.75rem;
+  color: #666;
+  user-select: none;
+}
+
+.motif-group-instances {
+  padding: 0.5rem 0.75rem;
+  background-color: white;
+  border-top: 1px solid #e0e0e0;
+}
+
+.motif-group-instances ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.motif-instance-item {
+  padding: 0.5rem;
+  background-color: #f9f9f9;
+  border-radius: 3px;
+  border-left: 3px solid #007bff;
+}
+
+.motif-instance-stem {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: #333;
+  text-transform: capitalize;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.motif-variation-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  background-color: #fff3cd;
+  color: #856404;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.motif-instance-time {
+  font-size: 0.75rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.motif-instance-region {
+  font-size: 0.7rem;
+  color: #999;
+  font-style: italic;
+}
+
