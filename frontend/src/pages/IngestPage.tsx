@@ -8,12 +8,16 @@ import './IngestPage.css';
 
 type Status = 'idle' | 'uploading' | 'analyzing' | 'complete' | 'error';
 
+interface IngestPageProps {
+  onAnalysisComplete?: () => void;
+}
+
 interface FileState {
   file: File | null;
   name: string;
 }
 
-function IngestPage(): JSX.Element {
+function IngestPage({ onAnalysisComplete }: IngestPageProps): JSX.Element {
   const { setReferenceId, setRegions } = useProject();
   
   const [files, setFiles] = useState<{
@@ -84,6 +88,11 @@ function IngestPage(): JSX.Element {
 
       setStatus('complete');
       setStatusMessage(`Analysis complete – ${regions.length} regions detected.`);
+      
+      // Call callback to navigate to region map
+      if (onAnalysisComplete) {
+        onAnalysisComplete();
+      }
     } catch (error) {
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'An error occurred during analysis.');
