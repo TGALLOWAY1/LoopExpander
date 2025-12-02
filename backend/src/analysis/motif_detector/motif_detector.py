@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import time
+from os import getenv
 
 try:
     from typing import Literal
@@ -19,6 +20,9 @@ from models.region import Region
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Debug cap for motif segments (set via DEBUG_MAX_MOTIF_SEGMENTS env var)
+DEBUG_MAX_MOTIF_SEGMENTS = int(getenv("DEBUG_MAX_MOTIF_SEGMENTS", "0") or "0")
 
 # Configuration constants
 DEFAULT_MOTIF_BARS = 2.0
@@ -351,6 +355,23 @@ def detect_motifs(
         t_seg_start = time.time()
         segments = _segment_stem(audio_mono, sr, bpm, window_bars, hop_bars)
         t_seg_end = time.time()
+        
+        logger.info(
+            "Motif segmentation raw count",
+            extra={"segment_count": len(segments)},
+        )
+        
+        # Apply debug cap if set
+        if DEBUG_MAX_MOTIF_SEGMENTS and len(segments) > DEBUG_MAX_MOTIF_SEGMENTS:
+            logger.warning(
+                "Truncating motif segments for debug",
+                extra={
+                    "raw_segment_count": len(segments),
+                    "max_segments": DEBUG_MAX_MOTIF_SEGMENTS,
+                },
+            )
+            segments = segments[:DEBUG_MAX_MOTIF_SEGMENTS]
+        
         logger.info("Motif segmentation complete", extra={"stem_role": stem_role, "segment_count": len(segments), "elapsed_sec": round(t_seg_end - t_seg_start, 3)})
         
         # Extract features for each segment
