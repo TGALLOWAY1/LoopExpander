@@ -17,3 +17,6 @@ REFERENCE_MOTIFS: Dict[str, tuple] = {}
 # In-memory storage for detected call-response pairs per reference
 REFERENCE_CALL_RESPONSE: Dict[str, List] = {}
 
+# In-memory storage for detected fills per reference
+REFERENCE_FILLS: Dict[str, List] = {}
+

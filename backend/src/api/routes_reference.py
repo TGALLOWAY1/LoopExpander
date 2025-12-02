@@ -8,18 +8,22 @@ from typing import Dict
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 
-from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE
+from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE, REFERENCE_FILLS
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
 from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import detect_motifs
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from config import (
     DEFAULT_MOTIF_SENSITIVITY,
     DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
     DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
     DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
-    DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+    DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
+    DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
+    DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
+    DEFAULT_FILL_MIN_TRANSIENT_DENSITY
 )
 from utils.logger import get_logger
 
@@ -172,12 +176,26 @@ async def analyze_reference(
         REFERENCE_CALL_RESPONSE[reference_id] = call_response_pairs
         logger.info(f"Detected {len(call_response_pairs)} call-response pairs for reference {reference_id}")
         
+        # Detect fills
+        logger.info(f"Detecting fills for reference {reference_id}")
+        fill_config = FillConfig(
+            pre_boundary_window_bars=DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
+            transient_density_threshold_multiplier=DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
+            min_transient_density=DEFAULT_FILL_MIN_TRANSIENT_DENSITY
+        )
+        fills = detect_fills(bundle, regions, config=fill_config)
+        
+        # Store fills
+        REFERENCE_FILLS[reference_id] = fills
+        logger.info(f"Detected {len(fills)} fills for reference {reference_id}")
+        
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
             "motifInstanceCount": len(instances),
             "motifGroupCount": len(groups),
             "callResponseCount": len(call_response_pairs),
+            "fillCount": len(fills),
             "status": "ok"
         }
     
@@ -354,4 +372,52 @@ async def get_call_response(reference_id: str):
         "referenceId": reference_id,
         "pairs": pairs_dict,
         "count": len(pairs_dict)
+    }
+
+
+@router.get("/{reference_id}/fills")
+async def get_fills(reference_id: str):
+    """
+    Get detected fills for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with fill objects
+    """
+    logger.info(f"Getting fills for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if fills have been detected
+    if reference_id not in REFERENCE_FILLS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fills not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    fills = REFERENCE_FILLS[reference_id]
+    
+    # Convert Fill dataclasses to dictionaries for JSON serialization
+    fills_dict = []
+    for fill in fills:
+        fills_dict.append({
+            "id": fill.id,
+            "time": fill.time,
+            "stemRoles": fill.stem_roles,
+            "regionId": fill.region_id,
+            "confidence": fill.confidence,
+            "fillType": fill.fill_type
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "fills": fills_dict,
+        "count": len(fills_dict)
     }
