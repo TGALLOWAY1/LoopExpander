@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Song Structure Replicator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#13a4ec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101c22",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+                'FILL' 0,
+                'wght' 400,
+                'GRAD' 0,
+                'opsz' 24
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-white overflow-hidden h-screen flex flex-col">
+<div class="flex-grow flex min-h-0">
+<!-- Left Sidebar -->
+<aside class="w-64 bg-[#111618] flex flex-col p-4 space-y-4 shrink-0">
+<h1 class="text-white text-base font-medium leading-normal">Your Library</h1>
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#283339]">
+<span class="material-symbols-outlined text-white">music_note</span>
+<p class="text-white text-sm font-medium leading-normal">Stems</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#283339]/50 cursor-pointer">
+<span class="material-symbols-outlined text-white">music_note</span>
+<p class="text-white text-sm font-medium leading-normal">Templates</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#283339]/50 cursor-pointer">
+<span class="material-symbols-outlined text-white">difference</span>
+<p class="text-white text-sm font-medium leading-normal">Reference</p>
+</div>
+</div>
+<div class="px-0 py-3">
+<label class="flex flex-col min-w-40 h-10 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-[#9db0b9] flex border-none bg-[#283339] items-center justify-center pl-3 rounded-l-lg border-r-0">
+<span class="material-symbols-outlined text-base">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-white focus:outline-0 focus:ring-0 border-none bg-[#283339] focus:border-none h-full placeholder:text-[#9db0b9] px-2 rounded-l-none border-l-0 text-sm font-normal leading-normal" placeholder="Search in your library" value=""/>
+</div>
+</label>
+</div>
+<div class="flex-grow overflow-y-auto space-y-2 pr-2">
+<div class="flex items-center gap-4 bg-transparent px-2 min-h-14 justify-between cursor-pointer hover:bg-[#283339]/50 rounded-lg">
+<div class="flex items-center gap-4">
+<div class="text-white flex items-center justify-center rounded-lg bg-[#283339] shrink-0 size-10">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<p class="text-white text-sm font-normal leading-normal flex-1 truncate">Drum Loop 01</p>
+</div>
+<div class="shrink-0">
+<div class="text-white flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">more_horiz</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-transparent px-2 min-h-14 justify-between cursor-pointer hover:bg-[#283339]/50 rounded-lg">
+<div class="flex items-center gap-4">
+<div class="text-white flex items-center justify-center rounded-lg bg-[#283339] shrink-0 size-10">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<p class="text-white text-sm font-normal leading-normal flex-1 truncate">Bassline Groove</p>
+</div>
+<div class="shrink-0">
+<div class="text-white flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">more_horiz</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-transparent px-2 min-h-14 justify-between cursor-pointer hover:bg-[#283339]/50 rounded-lg">
+<div class="flex items-center gap-4">
+<div class="text-white flex items-center justify-center rounded-lg bg-[#283339] shrink-0 size-10">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<p class="text-white text-sm font-normal leading-normal flex-1 truncate">Vocal Chop</p>
+</div>
+<div class="shrink-0">
+<div class="text-white flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">more_horiz</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-transparent px-2 min-h-14 justify-between cursor-pointer hover:bg-[#283339]/50 rounded-lg">
+<div class="flex items-center gap-4">
+<div class="text-white flex items-center justify-center rounded-lg bg-[#283339] shrink-0 size-10">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<p class="text-white text-sm font-normal leading-normal flex-1 truncate">Synth Pad</p>
+</div>
+<div class="shrink-0">
+<div class="text-white flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">more_horiz</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-transparent px-2 min-h-14 justify-between cursor-pointer hover:bg-[#283339]/50 rounded-lg">
+<div class="flex items-center gap-4">
+<div class="text-white flex items-center justify-center rounded-lg bg-[#283339] shrink-0 size-10">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<p class="text-white text-sm font-normal leading-normal flex-1 truncate">Arpeggio</p>
+</div>
+<div class="shrink-0">
+<div class="text-white flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">more_horiz</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Center Panel -->
+<main class="flex-grow flex flex-col bg-[#1E1E1E]">
+<!-- Top Bar -->
+<header class="h-16 bg-[#111618] flex items-center justify-between px-6 shrink-0">
+<div class="flex items-center gap-4">
+<button class="text-white hover:text-primary"><span class="material-symbols-outlined text-4xl">play_arrow</span></button>
+<button class="text-white hover:text-primary"><span class="material-symbols-outlined text-4xl">stop</span></button>
+<button class="text-white hover:text-primary"><span class="material-symbols-outlined text-3xl">loop</span></button>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="text-sm text-[#9db0b9]">BPM</span>
+<input class="w-16 bg-[#283339] text-white border-none rounded-md text-center focus:ring-primary focus:ring-1" type="number" value="120"/>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-sm text-[#9db0b9]">Key</span>
+<select class="bg-[#283339] text-white border-none rounded-md focus:ring-primary focus:ring-1">
+<option>C Major</option>
+<option>A Minor</option>
+</select>
+</div>
+<div class="text-white font-mono text-lg">00:00:000</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-white hover:text-primary"><span class="material-symbols-outlined">zoom_in</span></button>
+<input class="w-24 h-1 accent-primary bg-[#283339] rounded-full appearance-none cursor-pointer" type="range"/>
+<button class="text-white hover:text-primary"><span class="material-symbols-outlined">zoom_out</span></button>
+</div>
+</header>
+<!-- Timeline Arranger -->
+<div class="flex-grow overflow-x-auto overflow-y-scroll relative">
+<!-- Bar Ruler -->
+<div class="sticky top-0 h-8 bg-[#111618] z-20 flex items-end border-b border-[#283339]">
+<div class="w-40 shrink-0"></div>
+<div class="flex h-full" style="width: 2000px">
+<div class="w-full relative text-xs text-[#9db0b9]">
+<!-- Numbers would be dynamically generated here -->
+<div class="absolute left-0 bottom-1">1</div>
+<div class="absolute left-[120px] bottom-1">2</div>
+<div class="absolute left-[240px] bottom-1">3</div>
+<div class="absolute left-[360px] bottom-1">4</div>
+<div class="absolute left-[480px] bottom-1">5</div>
+<div class="absolute left-[600px] bottom-1">6</div>
+<div class="absolute left-[720px] bottom-1">7</div>
+<div class="absolute left-[840px] bottom-1">8</div>
+<div class="absolute left-[960px] bottom-1">9</div>
+</div>
+</div>
+</div>
+<!-- Playhead -->
+<div class="absolute top-8 left-40 h-full w-0.5 bg-primary z-10" style="left: calc(10rem + 180px)"></div>
+<div class="flex">
+<!-- Section Labels -->
+<div class="w-40 shrink-0 bg-[#1E1E1E] sticky left-0 z-10">
+<div class="h-24 flex items-center justify-start pl-4 border-b border-r border-[#283339] bg-[#283339]/30">
+<input class="bg-transparent text-white w-full border-none focus:ring-0" type="text" value="Intro"/>
+</div>
+<div class="h-24 flex items-center justify-start pl-4 border-b border-r border-[#283339]">
+<input class="bg-transparent text-white w-full border-none focus:ring-0" type="text" value="Verse 1"/>
+</div>
+<div class="h-24 flex items-center justify-start pl-4 border-b border-r border-[#283339] bg-[#283339]/30">
+<input class="bg-transparent text-white w-full border-none focus:ring-0" type="text" value="Chorus"/>
+</div>
+<div class="h-24 flex items-center justify-start pl-4 border-b border-r border-[#283339]">
+<input class="bg-transparent text-white w-full border-none focus:ring-0" type="text" value="Bridge"/>
+</div>
+<div class="h-24 flex items-center justify-start pl-4 border-b border-r border-[#283339] bg-[#283339]/30">
+<input class="bg-transparent text-white w-full border-none focus:ring-0" type="text" value="Outro"/>
+</div>
+</div>
+<!-- Grid -->
+<div class="relative" style="width: 2000px">
+<!-- Grid Lines -->
+<div class="absolute inset-0 bg-repeat-x" style="background-image: linear-gradient(to right, #283339 1px, transparent 1px); background-size: 120px 100%;"></div>
+<!-- Section Lanes -->
+<div class="h-24 border-b border-[#283339] relative">
+<!-- Clip -->
+<div class="absolute top-4 left-[240px] w-[240px] h-16 bg-purple-500/50 rounded-lg flex items-center px-2 cursor-pointer border border-purple-400">
+<p class="text-xs truncate">Vocal Chop</p>
+</div>
+</div>
+<div class="h-24 border-b border-[#283339] relative">
+<!-- Clip -->
+<div class="absolute top-4 left-[240px] w-[480px] h-16 bg-green-500/50 rounded-lg flex items-center px-2 cursor-pointer border border-green-400">
+<p class="text-xs truncate">Bassline Groove</p>
+</div>
+</div>
+<div class="h-24 border-b border-[#283339] relative">
+<!-- Clip -->
+<div class="absolute top-4 left-[480px] w-[480px] h-16 bg-orange-500/50 rounded-lg flex items-center px-2 cursor-pointer border border-orange-400">
+<p class="text-xs truncate">Drum Loop 01</p>
+</div>
+<!-- Ghost suggestion -->
+<div class="absolute top-4 left-[960px] w-[240px] h-16 bg-orange-500/20 rounded-lg flex items-center px-2 border border-dashed border-orange-400/50">
+<p class="text-xs text-white/50 truncate">Suggestion</p>
+</div>
+</div>
+<div class="h-24 border-b border-[#283339]"></div>
+<div class="h-24 border-b border-[#283339]"></div>
+<!-- Transition Button -->
+<button class="absolute top-1/2 left-[475px] -translate-y-1/2 z-20 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-base">add</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Panel -->
+<aside class="w-72 bg-[#111618] flex flex-col p-4 space-y-4 shrink-0">
+<h2 class="text-white text-base font-medium leading-normal">Inspector</h2>
+<div class="bg-[#283339] p-4 rounded-lg space-y-4">
+<h3 class="text-white text-sm font-medium">Clip Properties</h3>
+<div class="space-y-3">
+<div>
+<label class="text-xs text-[#9db0b9] block mb-1">Gain</label>
+<input class="w-full h-1 accent-primary bg-background-dark rounded-full appearance-none cursor-pointer" type="range"/>
+</div>
+<div>
+<label class="text-xs text-[#9db0b9] block mb-1">Pan</label>
+<input class="w-full h-1 accent-primary bg-background-dark rounded-full appearance-none cursor-pointer" type="range"/>
+</div>
+<div>
+<label class="text-xs text-[#9db0b9] block mb-1">Transpose</label>
+<input class="w-full bg-background-dark text-white border-none rounded-md h-8 text-sm focus:ring-primary focus:ring-1" type="number" value="0"/>
+</div>
+</div>
+</div>
+<div class="bg-[#283339] p-4 rounded-lg space-y-4">
+<h3 class="text-white text-sm font-medium">Section Properties</h3>
+<div class="space-y-3">
+<div>
+<label class="text-xs text-[#9db0b9] block mb-1">Name</label>
+<input class="w-full bg-background-dark text-white border-none rounded-md h-8 text-sm focus:ring-primary focus:ring-1" type="text" value="Chorus"/>
+</div>
+<div>
+<label class="text-xs text-[#9db0b9] block mb-1">Color</label>
+<div class="flex gap-2">
+<div class="w-6 h-6 rounded-full bg-purple-500 cursor-pointer border-2 border-primary"></div>
+<div class="w-6 h-6 rounded-full bg-green-500 cursor-pointer"></div>
+<div class="w-6 h-6 rounded-full bg-orange-500 cursor-pointer"></div>
+<div class="w-6 h-6 rounded-full bg-blue-500 cursor-pointer"></div>
+<div class="w-6 h-6 rounded-full bg-red-500 cursor-pointer"></div>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</body></html>
