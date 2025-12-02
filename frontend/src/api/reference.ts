@@ -216,6 +216,9 @@ export async function getMotifs(
   referenceId: string,
   sensitivity?: number
 ): Promise<MotifsResponse> {
+  // Log before request
+  console.log('[getMotifs] Fetching motifs:', { referenceId, sensitivity });
+  
   const url = new URL(`${API_BASE_URL}/api/reference/${referenceId}/motifs`);
   if (sensitivity !== undefined) {
     url.searchParams.set('sensitivity', sensitivity.toString());
@@ -233,7 +236,16 @@ export async function getMotifs(
     throw new Error(error.detail || `Failed to fetch motifs with status ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // Log after success
+  console.log('[getMotifs] Motifs fetched successfully:', {
+    referenceId,
+    instanceCount: data.instanceCount || data.instances?.length || 0,
+    groupCount: data.groupCount || data.groups?.length || 0,
+  });
+  
+  return data;
 }
 
 /**

@@ -34,6 +34,9 @@ function RegionMapPage(): JSX.Element {
   const loadMotifs = useCallback(async (sensitivity: number) => {
     if (!referenceId) return;
     
+    // Log before calling getMotifs
+    console.log('[RegionMapPage] loadMotifs called:', { referenceId, sensitivity });
+    
     setLoadingMotifs(true);
     setError(null);
     try {
