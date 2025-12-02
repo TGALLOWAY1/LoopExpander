@@ -1,13 +1,79 @@
 /**
  * Region Map page for displaying detected regions in a timeline.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { RegionBlock } from '../components/RegionBlock';
+import { getMotifs, getCallResponse, getFills } from '../api/reference';
 import './RegionMapPage.css';
 
 function RegionMapPage(): JSX.Element {
-  const { referenceId, regions } = useProject();
+  const { 
+    referenceId, 
+    regions, 
+    setMotifs, 
+    setCallResponsePairs, 
+    setFills 
+  } = useProject();
+  
+  const [loadingMotifs, setLoadingMotifs] = useState(false);
+  const [loadingCallResponse, setLoadingCallResponse] = useState(false);
+  const [loadingFills, setLoadingFills] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load motifs, call-response, and fills when referenceId and regions are available
+  useEffect(() => {
+    if (!referenceId || regions.length === 0) {
+      return;
+    }
+
+    // Fetch motifs with default sensitivity
+    const loadMotifs = async () => {
+      setLoadingMotifs(true);
+      setError(null);
+      try {
+        const response = await getMotifs(referenceId, 0.5);
+        setMotifs(response.instances, response.groups);
+      } catch (err) {
+        console.error('Error loading motifs:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load motifs');
+      } finally {
+        setLoadingMotifs(false);
+      }
+    };
+
+    // Fetch call-response pairs
+    const loadCallResponse = async () => {
+      setLoadingCallResponse(true);
+      try {
+        const response = await getCallResponse(referenceId);
+        setCallResponsePairs(response.pairs);
+      } catch (err) {
+        console.error('Error loading call-response pairs:', err);
+        // Don't set error for call-response, just log it
+      } finally {
+        setLoadingCallResponse(false);
+      }
+    };
+
+    // Fetch fills
+    const loadFills = async () => {
+      setLoadingFills(true);
+      try {
+        const response = await getFills(referenceId);
+        setFills(response.fills);
+      } catch (err) {
+        console.error('Error loading fills:', err);
+        // Don't set error for fills, just log it
+      } finally {
+        setLoadingFills(false);
+      }
+    };
+
+    loadMotifs();
+    loadCallResponse();
+    loadFills();
+  }, [referenceId, regions.length, setMotifs, setCallResponsePairs, setFills]);
 
   // Compute total duration from the last region's end time
   const totalDuration = regions.length > 0
@@ -45,7 +111,15 @@ function RegionMapPage(): JSX.Element {
             <span>Reference ID: {referenceId}</span>
             <span>Regions: {regions.length}</span>
             <span>Duration: {totalDuration.toFixed(1)}s</span>
+            {(loadingMotifs || loadingCallResponse || loadingFills) && (
+              <span className="loading-indicator">Loading analysis data...</span>
+            )}
           </div>
+          {error && (
+            <div className="error-message" style={{ color: 'red', marginTop: '10px' }}>
+              {error}
+            </div>
+          )}
         </div>
 
         <div className="region-timeline">

@@ -2,7 +2,13 @@
  * Project context for managing reference track and regions state.
  */
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Region } from '../api/reference';
+import { 
+  Region, 
+  MotifInstance, 
+  MotifGroup, 
+  CallResponsePair, 
+  Fill 
+} from '../api/reference';
 
 /**
  * Project state type.
@@ -10,8 +16,15 @@ import { Region } from '../api/reference';
 export type ProjectState = {
   referenceId: string | null;
   regions: Region[];
+  motifs: MotifInstance[];
+  motifGroups: MotifGroup[];
+  callResponsePairs: CallResponsePair[];
+  fills: Fill[];
   setReferenceId: (id: string | null) => void;
   setRegions: (regions: Region[]) => void;
+  setMotifs: (motifs: MotifInstance[], groups: MotifGroup[]) => void;
+  setCallResponsePairs: (pairs: CallResponsePair[]) => void;
+  setFills: (fills: Fill[]) => void;
 };
 
 /**
@@ -20,11 +33,24 @@ export type ProjectState = {
 const defaultState: ProjectState = {
   referenceId: null,
   regions: [],
+  motifs: [],
+  motifGroups: [],
+  callResponsePairs: [],
+  fills: [],
   setReferenceId: () => {
     console.warn('setReferenceId called outside ProjectProvider');
   },
   setRegions: () => {
     console.warn('setRegions called outside ProjectProvider');
+  },
+  setMotifs: () => {
+    console.warn('setMotifs called outside ProjectProvider');
+  },
+  setCallResponsePairs: () => {
+    console.warn('setCallResponsePairs called outside ProjectProvider');
+  },
+  setFills: () => {
+    console.warn('setFills called outside ProjectProvider');
   },
 };
 
@@ -59,12 +85,28 @@ interface ProjectProviderProps {
 export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element {
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
+  const [motifs, setMotifsState] = useState<MotifInstance[]>([]);
+  const [motifGroups, setMotifGroupsState] = useState<MotifGroup[]>([]);
+  const [callResponsePairs, setCallResponsePairs] = useState<CallResponsePair[]>([]);
+  const [fills, setFills] = useState<Fill[]>([]);
+
+  const setMotifs = (newMotifs: MotifInstance[], newGroups: MotifGroup[]) => {
+    setMotifsState(newMotifs);
+    setMotifGroupsState(newGroups);
+  };
 
   const value: ProjectState = {
     referenceId,
     regions,
+    motifs,
+    motifGroups,
+    callResponsePairs,
+    fills,
     setReferenceId,
     setRegions,
+    setMotifs,
+    setCallResponsePairs,
+    setFills,
   };
 
   return (
