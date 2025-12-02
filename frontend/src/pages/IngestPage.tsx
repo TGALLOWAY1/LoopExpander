@@ -1,9 +1,9 @@
 /**
  * Ingest page for uploading and analyzing reference tracks.
  */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { uploadReference, analyzeReference, fetchRegions } from '../api/reference';
+import { uploadReference, analyzeReference, fetchRegions, createGalliumDevReference } from '../api/reference';
 import './IngestPage.css';
 
 type Status = 'idle' | 'uploading' | 'analyzing' | 'complete' | 'error';
@@ -37,6 +37,10 @@ function IngestPage({ onAnalysisComplete }: IngestPageProps): JSX.Element {
   const [status, setStatus] = useState<Status>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isGalliumLoading, setIsGalliumLoading] = useState(false);
+  
+  // Check if we're in dev mode
+  const isDev = import.meta.env.DEV || import.meta.env.MODE !== 'production';
 
   const handleFileChange = (role: keyof typeof files, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
@@ -98,6 +102,45 @@ function IngestPage({ onAnalysisComplete }: IngestPageProps): JSX.Element {
       setErrorMessage(error instanceof Error ? error.message : 'An error occurred during analysis.');
       setStatusMessage('');
       console.error('Analysis error:', error);
+    }
+  };
+
+  const handleUseGalliumDevReference = async () => {
+    setIsGalliumLoading(true);
+    setStatus('uploading');
+    setStatusMessage('Loading Gallium test files...');
+    setErrorMessage('');
+
+    try {
+      // Step 1: Create reference from test files
+      const uploadResult = await createGalliumDevReference();
+
+      setReferenceId(uploadResult.referenceId);
+      setStatusMessage(`Upload complete. BPM: ${uploadResult.bpm.toFixed(1)}. Analyzing...`);
+      setStatus('analyzing');
+
+      // Step 2: Analyze
+      await analyzeReference(uploadResult.referenceId);
+      setStatusMessage(`Analysis complete. Fetching regions...`);
+
+      // Step 3: Fetch regions
+      const regions = await fetchRegions(uploadResult.referenceId);
+      setRegions(regions);
+
+      setStatus('complete');
+      setStatusMessage(`Analysis complete – ${regions.length} regions detected.`);
+      
+      // Call callback to navigate to region map
+      if (onAnalysisComplete) {
+        onAnalysisComplete();
+      }
+    } catch (error) {
+      setStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'An error occurred while loading Gallium test files.');
+      setStatusMessage('');
+      console.error('Gallium dev reference error:', error);
+    } finally {
+      setIsGalliumLoading(false);
     }
   };
 
@@ -184,12 +227,30 @@ function IngestPage({ onAnalysisComplete }: IngestPageProps): JSX.Element {
         <div className="ingest-actions">
           <button
             onClick={handleAnalyze}
-            disabled={!allFilesSelected() || status === 'uploading' || status === 'analyzing'}
+            disabled={!allFilesSelected() || status === 'uploading' || status === 'analyzing' || isGalliumLoading}
             className="analyze-button"
           >
             {status === 'uploading' || status === 'analyzing' ? 'Processing...' : 'Analyze Reference'}
           </button>
         </div>
+
+        {isDev && (
+          <div className="dev-shortcut">
+            <div className="dev-shortcut-header">Dev Shortcut</div>
+            <p className="dev-shortcut-description">
+              Use the bundled test stems from{' '}
+              <code>2. Test Data/Song-1-Gallium-MakeEmWatch-130BPM</code>.
+            </p>
+            <button
+              type="button"
+              onClick={handleUseGalliumDevReference}
+              disabled={isGalliumLoading || status === 'uploading' || status === 'analyzing'}
+              className="dev-shortcut-button"
+            >
+              {isGalliumLoading ? 'Loading Gallium...' : 'Use Gallium Test Files'}
+            </button>
+          </div>
+        )}
 
         {statusMessage && (
           <div className={`status-message ${status === 'complete' ? 'success' : ''}`}>
