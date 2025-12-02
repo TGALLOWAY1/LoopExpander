@@ -1,6 +1,7 @@
 """Motif detection engine for identifying repeated patterns in audio stems."""
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
+import time
 
 try:
     from typing import Literal
@@ -320,8 +321,8 @@ def detect_motifs(
     Returns:
         Tuple of (list of MotifInstances, list of MotifGroups)
     """
-    logger.info(f"Starting motif detection for bundle: {reference_bundle}")
-    logger.info(f"Parameters: sensitivity={sensitivity}, window_bars={window_bars}, hop_bars={hop_bars}")
+    t0 = time.time()
+    logger.info("Motif detection started", extra={"sensitivity": sensitivity, "window_bars": window_bars, "hop_bars": hop_bars})
     
     bpm = reference_bundle.bpm
     all_instances = []
@@ -347,9 +348,13 @@ def detect_motifs(
         audio_mono = _ensure_mono(audio)
         
         # Segment the stem
+        t_seg_start = time.time()
         segments = _segment_stem(audio_mono, sr, bpm, window_bars, hop_bars)
+        t_seg_end = time.time()
+        logger.info("Motif segmentation complete", extra={"stem_role": stem_role, "segment_count": len(segments), "elapsed_sec": round(t_seg_end - t_seg_start, 3)})
         
         # Extract features for each segment
+        t_feat_start = time.time()
         for start_time, end_time in segments:
             features = _extract_features(audio_mono, sr, start_time, end_time)
             
@@ -364,18 +369,34 @@ def detect_motifs(
                 )
                 all_instances.append(instance)
                 instance_counter += 1
-        
-        logger.info(f"Extracted {len([i for i in all_instances if i.stem_role == stem_role])} motif instances from {stem_role}")
+        t_feat_end = time.time()
+        stem_instance_count = len([i for i in all_instances if i.stem_role == stem_role])
+        logger.info("Motif feature extraction complete", extra={"stem_role": stem_role, "segment_count": len(segments), "instance_count": stem_instance_count, "elapsed_sec": round(t_feat_end - t_feat_start, 3)})
     
     logger.info(f"Total motif instances extracted: {len(all_instances)}")
     
     # Cluster motifs
+    t_cluster_start = time.time()
     instances, groups = _cluster_motifs(all_instances, sensitivity)
+    t_cluster_end = time.time()
+    logger.info(
+        "Motif clustering complete",
+        extra={
+            "motif_instance_count": len(instances),
+            "motif_group_count": len(groups),
+            "elapsed_sec": round(t_cluster_end - t_cluster_start, 3),
+        },
+    )
     
     # Align motifs with regions
     _align_motifs_with_regions(instances, regions)
     
-    logger.info(f"Motif detection complete: {len(instances)} instances in {len(groups)} groups")
+    t1 = time.time()
+    elapsed = round(t1 - t0, 3)
+    logger.info(
+        "Motif detection finished",
+        extra={"total_elapsed_sec": elapsed, "sensitivity": sensitivity, "instance_count": len(instances), "group_count": len(groups)},
+    )
     
     return instances, groups
 
