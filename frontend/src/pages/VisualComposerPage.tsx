@@ -1,5 +1,37 @@
 /**
  * Visual Composer page for manual annotation of regions.
+ * 
+ * ANNOTATION MODEL AUDIT (P2-01):
+ * 
+ * TypeScript Types (from frontend/src/api/reference.ts):
+ * - ReferenceAnnotations: { referenceId: string; regions: RegionAnnotations[]; }
+ * - RegionAnnotations: { regionId: string; lanes: AnnotationLane[]; regionNotes?: string | null; }
+ * - AnnotationLane: { stemCategory: StemCategory; blocks: AnnotationBlock[]; }
+ * - AnnotationBlock: { id: string; startBar: number; endBar: number; label?: string | null; }
+ * 
+ * Backend Pydantic Models (from backend/src/models/annotations.py):
+ * - ReferenceAnnotations: { reference_id: str; regions: List[RegionAnnotations] }
+ * - RegionAnnotations: { region_id: str; lanes: List[AnnotationLane] }  [NOTE: NO regionNotes field!]
+ * - AnnotationLane: { stem_category: str; blocks: List[AnnotationBlock] }
+ * - AnnotationBlock: { id: str; start_bar: float; end_bar: float; label: Optional[str] }
+ * 
+ * Key Differences:
+ * 1. Naming: Backend uses snake_case (reference_id, region_id, start_bar, end_bar, stem_category)
+ *            Frontend uses camelCase (referenceId, regionId, startBar, endBar, stemCategory)
+ * 2. Missing Field: Backend RegionAnnotations lacks 'regionNotes' field that frontend expects
+ * 3. Type: Backend uses float for bars, frontend uses number (compatible but noted)
+ * 
+ * Data Flow:
+ * - Loading: getAnnotations() fetches from GET /api/reference/{id}/annotations
+ *            Backend returns snake_case via model_dump() (no aliases configured)
+ *            Frontend expects camelCase - POTENTIAL MISMATCH
+ * - Storage: Stored in ProjectContext.annotations (ReferenceAnnotations | null)
+ * - Local State: VisualComposerPage maps to localRegionAnnotations (RegionAnnotations)
+ *            via useEffect that finds existing RegionAnnotations by regionId
+ * - Saving: saveAnnotations() sends POST /api/reference/{id}/annotations
+ *            Frontend sends camelCase, backend expects snake_case - POTENTIAL MISMATCH
+ * 
+ * See docs/visual-composer-notes.md for full audit details.
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useProject } from '../context/ProjectContext';
