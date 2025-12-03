@@ -1,0 +1,61 @@
+.composer-timeline {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #fff;
+  overflow: hidden;
+}
+
+.composer-timeline.empty {
+  padding: 24px;
+  text-align: center;
+  color: #999;
+}
+
+.composer-timeline.empty p {
+  margin: 0;
+}
+
+.composer-timeline-header {
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 0;
+  border-bottom: 2px solid #ccc;
+  background-color: #f8f8f8;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+}
+
+.composer-timeline-header-label {
+  width: 120px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.composer-timeline-header-grid {
+  flex: 1;
+  position: relative;
+  overflow-x: auto;
+}
+
+.composer-timeline-bar-numbers {
+  display: flex;
+  min-width: max-content;
+}
+
+.composer-timeline-bar-number {
+  width: 40px;
+  text-align: center;
+  padding: 4px 0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.composer-timeline-lanes {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 600px;
+}
+

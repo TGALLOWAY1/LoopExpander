@@ -1,0 +1,82 @@
+.lane-timeline-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+  min-height: 60px;
+}
+
+.lane-timeline-row.collapsed {
+  min-height: 40px;
+}
+
+.lane-timeline-row-label {
+  width: 120px;
+  padding: 8px 12px;
+  font-weight: 500;
+  color: #333;
+  flex-shrink: 0;
+  border-right: 1px solid #e0e0e0;
+  background-color: #f8f8f8;
+}
+
+.lane-timeline-row-stub {
+  flex: 1;
+  padding: 8px 12px;
+  color: #999;
+  font-style: italic;
+}
+
+.lane-timeline-row-grid-container {
+  flex: 1;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.lane-timeline-row-grid {
+  display: grid;
+  position: relative;
+  min-height: 50px;
+}
+
+.lane-timeline-bar-cell {
+  border-right: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  min-height: 50px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.1s;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.lane-timeline-bar-cell:hover {
+  background-color: #f0f0f0;
+}
+
+.lane-timeline-bar-cell.has-block {
+  background-color: #f5f5f5;
+}
+
+.lane-timeline-bar-label {
+  font-size: 10px;
+  color: #999;
+  font-weight: 500;
+}
+
+.lane-timeline-row-blocks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.lane-timeline-row-blocks > * {
+  pointer-events: all;
+}
+

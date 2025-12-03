@@ -43,6 +43,7 @@ import {
   saveAnnotations
 } from '../api/reference';
 import { LaneList } from '../components/visualComposer/LaneList';
+import { ComposerTimeline } from '../components/visualComposer/ComposerTimeline';
 import './VisualComposerPage.css';
 
 interface VisualComposerPageProps {
@@ -68,6 +69,9 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     blocks: [],
     notes: '',
   });
+
+  // Block selection state
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
   // Legacy state (will be used for bar grid/block functionality in future prompts)
   const [isDragging, setIsDragging] = useState(false);
@@ -376,6 +380,31 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return Math.ceil(currentRegion.duration / 2);
   };
 
+  // Handle block creation from timeline
+  const handleCreateBlock = useCallback((laneId: string, startBar: number) => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    // Find the lane to get its color
+    const lane = localRegionAnnotations.lanes.find(l => l.id === laneId);
+    const laneColor = lane?.color || null;
+
+    // Create a 1-bar block
+    addBlock({
+      laneId,
+      startBar,
+      endBar: startBar + 1,
+      type: 'call',
+      color: laneColor,
+      label: null,
+      notes: null,
+    });
+  }, [localRegionAnnotations, regionId, addBlock]);
+
+  // Handle block selection
+  const handleSelectBlock = useCallback((blockId: string) => {
+    setSelectedBlockId(blockId);
+  }, []);
+
   // Handle bar grid click/drag
   const handleBarGridMouseDown = (laneIndex: number, bar: number) => {
     setIsDragging(true);
@@ -528,12 +557,15 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           )}
         </div>
 
-        {/* Lane content area - will be updated in future prompts */}
+        {/* Timeline area */}
         {localRegionAnnotations && localRegionAnnotations.lanes.length > 0 && (
-          <div className="lanes-content-area">
-            <p className="lanes-content-placeholder">
-              Lane content (bar grids, blocks) will be displayed here in future updates.
-            </p>
+          <div className="timeline-section">
+            <ComposerTimeline
+              regionAnnotations={localRegionAnnotations}
+              barCount={getRegionBars()}
+              onCreateBlock={handleCreateBlock}
+              onSelectBlock={handleSelectBlock}
+            />
           </div>
         )}
 
