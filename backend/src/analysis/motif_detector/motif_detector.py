@@ -1,8 +1,18 @@
-"""Motif detection engine for identifying repeated patterns in audio stems."""
+"""
+Motif detection engine for identifying repeated patterns in audio stems.
+
+TODO: AUDIT FINDINGS (see detect_motifs function for detailed logging):
+- This detector processes ALL stems (drums, bass, vocals, instruments, full_mix)
+- Each motif instance is tagged with stem_role field indicating its source
+- Per-stem clustering is performed using per-stem sensitivity config
+- Motifs are NOT full-mix-only; they are detected per-stem and tagged accordingly
+- The detector is fully wired for per-stem analysis
+"""
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import time
 from os import getenv
+from collections import Counter
 
 try:
     from typing import Literal
@@ -355,23 +365,43 @@ def detect_motifs(
     t0 = time.time()
     logger.info("Motif detection started", extra={"sensitivity_config": config, "window_bars": window_bars, "hop_bars": hop_bars})
     
-    bpm = reference_bundle.bpm
-    all_instances = []
-    all_groups = []
-    
-    # Process each stem
-    stems = {
+    # Debug: Log available audio sources
+    stems_dict = {
         "drums": reference_bundle.drums,
         "bass": reference_bundle.bass,
         "vocals": reference_bundle.vocals,
         "instruments": reference_bundle.instruments,
         "full_mix": reference_bundle.full_mix
     }
+    stems_available = [stem_role for stem_role, audio_file in stems_dict.items() if audio_file is not None]
+    
+    logger.info(
+        "[Motifs] Starting motif detection for reference bundle",
+        extra={
+            "stems_available": stems_available,
+            "has_full_mix": reference_bundle.full_mix is not None,
+            "total_stems": len(stems_available),
+            "stem_roles": list(stems_dict.keys())
+        }
+    )
+    
+    bpm = reference_bundle.bpm
+    all_instances = []
+    all_groups = []
+    
+    # Process each stem
+    stems = stems_dict
     
     instance_counter = 0
+    motifs_by_stem = {}  # Track counts per stem for summary
     
     for stem_role, audio_file in stems.items():
-        logger.info(f"Processing {stem_role} stem...")
+        if audio_file is None:
+            logger.info(f"[Motifs] Skipping {stem_role} stem (audio file is None)")
+            motifs_by_stem[stem_role] = 0
+            continue
+            
+        logger.info(f"[Motifs] Processing {stem_role} stem...")
         
         audio = audio_file.samples
         sr = audio_file.sr
@@ -433,6 +463,7 @@ def detect_motifs(
             clustered_instances, stem_groups = _cluster_motifs(stem_instances, stem_sensitivity, stem_role=stem_role)
             t_cluster_end = time.time()
             all_groups.extend(stem_groups)
+            motifs_by_stem[stem_role] = len(clustered_instances)
             logger.info(
                 f"Clustered {stem_role} stem motifs",
                 extra={
@@ -443,6 +474,36 @@ def detect_motifs(
                     "elapsed_sec": round(t_cluster_end - t_cluster_start, 3),
                 },
             )
+        else:
+            motifs_by_stem[stem_role] = 0
+            logger.info(f"[Motifs] No instances found for {stem_role} stem (skipped clustering)")
+    
+    # Debug: Log summary statistics by stem_role
+    from collections import Counter
+    stem_role_counts = Counter([inst.stem_role for inst in all_instances])
+    
+    logger.info(
+        "[Motifs] Summary: total instances and breakdown by stem",
+        extra={
+            "total_instances": len(all_instances),
+            "by_stem_role": dict(stem_role_counts),
+            "motifs_by_stem_processed": motifs_by_stem,
+            "total_groups": len(all_groups)
+        }
+    )
+    
+    # Log sample motif instance fields to verify tagging
+    if len(all_instances) > 0:
+        sample_instance = all_instances[0]
+        logger.info(
+            "[Motifs] Sample motif instance fields",
+            extra={
+                "has_stem_role": hasattr(sample_instance, 'stem_role'),
+                "stem_role_value": getattr(sample_instance, 'stem_role', 'N/A'),
+                "has_id": hasattr(sample_instance, 'id'),
+                "all_attributes": [attr for attr in dir(sample_instance) if not attr.startswith('_')]
+            }
+        )
     
     logger.info(f"Total motif instances extracted: {len(all_instances)}")
     logger.info(
