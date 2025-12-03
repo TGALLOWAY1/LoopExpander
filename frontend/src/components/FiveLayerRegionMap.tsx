@@ -271,7 +271,7 @@ export function FiveLayerRegionMap({
                 label={stemDisplayName}
                 sensitivityValue={config?.[stem]}
                 onSensitivityChange={(val) => updateStemSensitivity(stem, val)}
-                showSlider={true}
+                showSlider={focusedStem === stem}
               />
             </div>
             <div className={`five-layer-content five-layer-stem-lane ${isFocused ? 'five-layer-stem-lane--focused' : ''} ${isDimmed ? 'five-layer-stem-lane--dimmed' : ''}`}>
