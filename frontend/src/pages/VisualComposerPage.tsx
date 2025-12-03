@@ -33,7 +33,7 @@
  * 
  * See docs/visual-composer-notes.md for full audit details.
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { 
   ReferenceAnnotations, 
@@ -44,6 +44,7 @@ import {
 } from '../api/reference';
 import { LaneList } from '../components/visualComposer/LaneList';
 import { ComposerTimeline } from '../components/visualComposer/ComposerTimeline';
+import { NotesPanel } from '../components/visualComposer/NotesPanel';
 import './VisualComposerPage.css';
 
 interface VisualComposerPageProps {
@@ -72,6 +73,13 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
   // Block selection state
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  
+  // Audition state (for future audio playback)
+  const [lastAuditionRequest, setLastAuditionRequest] = useState<{
+    laneId: string;
+    startBar: number;
+    endBar: number;
+  } | null>(null);
 
   // Legacy state (will be used for bar grid/block functionality in future prompts)
   const [isDragging, setIsDragging] = useState(false);
@@ -400,9 +408,48 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     });
   }, [localRegionAnnotations, regionId, addBlock]);
 
-  // Handle block selection
+  // Derive selected block from selectedBlockId
+  const selectedBlock = useMemo(() => {
+    if (!selectedBlockId || !localRegionAnnotations) return undefined;
+    return localRegionAnnotations.blocks.find(b => b.id === selectedBlockId);
+  }, [selectedBlockId, localRegionAnnotations]);
+
+  // Handle block selection and audition
   const handleSelectBlock = useCallback((blockId: string) => {
     setSelectedBlockId(blockId);
+    
+    // Find the block for audition
+    const block = localRegionAnnotations?.blocks.find(b => b.id === blockId);
+    if (block) {
+      // Find the lane to get laneId
+      const lane = localRegionAnnotations?.lanes.find(l => l.id === block.laneId);
+      if (lane) {
+        handleAuditionBlock(lane.id, block.startBar, block.endBar);
+      }
+    }
+  }, [localRegionAnnotations]);
+
+  // Handle block notes change
+  const handleBlockNotesChange = useCallback((blockId: string, notes: string) => {
+    updateBlock(blockId, { notes: notes.trim() || null });
+  }, [updateBlock]);
+
+  // Audition hook (stub implementation)
+  const handleAuditionBlock = useCallback((laneId: string, startBar: number, endBar: number) => {
+    console.log('[Audition] Block requested:', {
+      laneId,
+      startBar,
+      endBar,
+      duration: endBar - startBar,
+    });
+    
+    setLastAuditionRequest({
+      laneId,
+      startBar,
+      endBar,
+    });
+    
+    // TODO: Implement actual audio playback in future phase
   }, []);
 
   // Handle block update from timeline
@@ -500,15 +547,19 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     }));
   };
 
-  // Update region notes
-  const handleRegionNotesChange = (notes: string) => {
+  // Update region notes (with debouncing)
+  const handleRegionNotesChange = useCallback((notes: string) => {
     if (!regionId) return;
 
+    // Update local state immediately for responsive UI
     setLocalRegionAnnotations(prev => ({
       ...prev,
       notes: notes,
     }));
-  };
+
+    // Debounce is handled by the existing useEffect that syncs localRegionAnnotations to global
+    // The debounced save to backend is already handled by debouncedSave
+  }, [regionId]);
 
   // Navigation
   const handlePrevRegion = () => {
@@ -599,15 +650,25 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           </div>
         )}
 
-        <div className="region-notes-section">
-          <h3>Region Notes</h3>
-          <textarea
-            className="region-notes-input"
-            value={localRegionAnnotations.notes || ''}
-            onChange={(e) => handleRegionNotesChange(e.target.value)}
-            placeholder="Add notes about this region..."
-            rows={6}
-          />
+        <div className="visual-composer-sidebar">
+          <div className="region-notes-section">
+            <h3>Region Notes</h3>
+            <textarea
+              className="region-notes-input"
+              value={localRegionAnnotations?.notes || ''}
+              onChange={(e) => handleRegionNotesChange(e.target.value)}
+              placeholder="Add notes about this region..."
+              rows={6}
+              disabled={!localRegionAnnotations}
+            />
+          </div>
+
+          <div className="block-notes-section">
+            <NotesPanel
+              selectedBlock={selectedBlock}
+              onChangeNotes={handleBlockNotesChange}
+            />
+          </div>
         </div>
       </div>
     </div>

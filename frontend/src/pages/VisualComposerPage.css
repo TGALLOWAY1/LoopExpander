@@ -113,8 +113,14 @@
 
 .visual-composer-content {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 300px;
   gap: 2rem;
+}
+
+.visual-composer-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .lanes-section {
@@ -300,6 +306,10 @@
   padding: 1.5rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.block-notes-section {
+  /* NotesPanel has its own styling */
 }
 
 .region-notes-section h3 {
