@@ -376,3 +376,205 @@ async def test_get_call_response_by_stem_not_found():
     
     assert exc_info.value.status_code == 404
 
+
+def test_detect_call_response_per_stem_only():
+    """Test that call/response is detected within each stem separately."""
+    from src.analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+    from src.analysis.motif_detector.motif_detector import MotifInstance
+    from collections import Counter
+    
+    # Create bass motifs in a call → response → response pattern
+    # Motif 1 (call) at 0s
+    call_features = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    bass_call = MotifInstance(
+        id="bass_001",
+        stem_role="bass",
+        start_time=0.0,
+        end_time=2.0,
+        features=call_features
+    )
+    
+    # Motif 2 (response) at 4s (similar features)
+    response_features = np.array([1.1, 2.1, 3.1, 4.1, 5.1])
+    bass_response1 = MotifInstance(
+        id="bass_002",
+        stem_role="bass",
+        start_time=4.0,
+        end_time=6.0,
+        features=response_features
+    )
+    
+    # Motif 3 (response) at 8s (similar features)
+    bass_response2 = MotifInstance(
+        id="bass_003",
+        stem_role="bass",
+        start_time=8.0,
+        end_time=10.0,
+        features=response_features
+    )
+    
+    # Create drums motif (different stem, should not pair with bass)
+    drums_motif = MotifInstance(
+        id="drums_001",
+        stem_role="drums",
+        start_time=2.0,
+        end_time=4.0,
+        features=np.array([10.0, 20.0, 30.0, 40.0, 50.0])  # Different features
+    )
+    
+    motifs = [bass_call, bass_response1, bass_response2, drums_motif]
+    
+    regions = [
+        Region(
+            id="region_01",
+            name="Section 1",
+            type="low_energy",
+            start=0.0,
+            end=15.0,
+            motifs=[],
+            fills=[],
+            callResponse=[]
+        )
+    ]
+    
+    bpm = 120.0
+    config = CallResponseConfig(
+        min_offset_bars=0.5,
+        max_offset_bars=4.0,
+        min_similarity=0.7,
+        min_confidence=0.5,
+        use_full_mix=False  # Stem-only mode
+    )
+    
+    pairs = detect_call_response(motifs, regions, bpm, config)
+    
+    # Should find pairs within bass stem only
+    bass_pairs = [p for p in pairs if p.from_stem_role == "bass" and p.to_stem_role == "bass"]
+    drums_pairs = [p for p in pairs if p.from_stem_role == "drums" and p.to_stem_role == "drums"]
+    inter_stem_pairs = [p for p in pairs if p.from_stem_role != p.to_stem_role]
+    
+    # Should have bass pairs (call → response pattern)
+    assert len(bass_pairs) > 0, "Should find call/response pairs within bass stem"
+    
+    # Should not have inter-stem pairs (bass ↔ drums)
+    assert len(inter_stem_pairs) == 0, "Should not have inter-stem pairs when processing per-stem"
+    
+    # All pairs should be intra-stem
+    assert all(p.is_intra_stem for p in pairs), "All pairs should be intra-stem"
+    assert all(not p.is_inter_stem for p in pairs), "No pairs should be inter-stem"
+    
+    # Verify pairs are tagged correctly
+    for pair in bass_pairs:
+        assert pair.from_stem_role == "bass", "Bass pair should have from_stem_role='bass'"
+        assert pair.to_stem_role == "bass", "Bass pair should have to_stem_role='bass'"
+    
+    # Count pairs by stem
+    pairs_by_stem = Counter([p.from_stem_role for p in pairs])
+    assert "bass" in pairs_by_stem, "Should have pairs for bass stem"
+    assert pairs_by_stem.get("bass", 0) > 0, "Should have at least one bass pair"
+
+
+def test_build_call_response_lanes_per_stem_pattern():
+    """Test building lanes with per-stem call → response → response pattern."""
+    from src.analysis.call_response_detector.call_response_detector import CallResponsePair
+    
+    regions = [
+        Region(
+            id="region_01",
+            name="Section 1",
+            type="low_energy",
+            start=0.0,
+            end=15.0,
+            motifs=[],
+            fills=[],
+            callResponse=[]
+        )
+    ]
+    
+    # Create bass call → response → response pattern (all intra-stem)
+    pairs = [
+        CallResponsePair(
+            id="pair_01",
+            from_motif_id="bass_001",
+            to_motif_id="bass_002",
+            from_stem_role="bass",
+            to_stem_role="bass",
+            from_time=0.0,
+            to_time=4.0,
+            time_offset=4.0,
+            confidence=0.8,
+            region_id="region_01"
+        ),
+        CallResponsePair(
+            id="pair_02",
+            from_motif_id="bass_001",
+            to_motif_id="bass_003",
+            from_stem_role="bass",
+            to_stem_role="bass",
+            from_time=0.0,
+            to_time=8.0,
+            time_offset=8.0,
+            confidence=0.75,
+            region_id="region_01"
+        )
+    ]
+    
+    # Create motif instances for accurate end times
+    motif_instances = [
+        MotifInstance(
+            id="bass_001",
+            stem_role="bass",
+            start_time=0.0,
+            end_time=2.0,
+            features=np.array([1.0, 2.0, 3.0])
+        ),
+        MotifInstance(
+            id="bass_002",
+            stem_role="bass",
+            start_time=4.0,
+            end_time=6.0,
+            features=np.array([1.1, 2.1, 3.1])
+        ),
+        MotifInstance(
+            id="bass_003",
+            stem_role="bass",
+            start_time=8.0,
+            end_time=10.0,
+            features=np.array([1.2, 2.2, 3.2])
+        )
+    ]
+    
+    bpm = 120.0
+    result = build_call_response_lanes(
+        reference_id="test_ref",
+        regions=regions,
+        call_response_pairs=pairs,
+        bpm=bpm,
+        motif_instances=motif_instances
+    )
+    
+    # Should have one lane with stem="bass"
+    assert len(result.lanes) == 1, "Should have exactly one lane (bass)"
+    bass_lane = result.lanes[0]
+    assert bass_lane.stem == "bass", "Lane should be for bass stem"
+    
+    # Should have multiple events (1 call + 2 responses)
+    assert len(bass_lane.events) == 3, "Should have 3 events (1 call + 2 responses)"
+    
+    # Verify call event
+    call_events = [e for e in bass_lane.events if e.role == "call"]
+    assert len(call_events) == 1, "Should have exactly one call event"
+    assert call_events[0].stem == "bass", "Call event should be in bass lane"
+    
+    # Verify response events
+    response_events = [e for e in bass_lane.events if e.role == "response"]
+    assert len(response_events) == 2, "Should have exactly two response events"
+    assert all(e.stem == "bass" for e in response_events), "All response events should be in bass lane"
+    
+    # Verify events are sorted by start_bar
+    start_bars = [e.start_bar for e in bass_lane.events]
+    assert start_bars == sorted(start_bars), "Events should be sorted by start_bar"
+    
+    # Verify no other stem lanes
+    assert all(lane.stem == "bass" for lane in result.lanes), "All lanes should be bass"
+
