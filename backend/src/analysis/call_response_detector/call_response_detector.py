@@ -20,6 +20,7 @@ class CallResponseConfig:
     preferred_rhythmic_grid: List[float] = None  # Preferred offsets in bars (e.g., [0.5, 1.0, 2.0, 4.0])
     max_responses_per_call: Optional[int] = None  # Limit number of responses per call (None = no limit)
     min_confidence: float = 0.5  # Minimum confidence to include a pair
+    use_full_mix: bool = False  # Whether to include full-mix motifs in call/response detection
     
     def __post_init__(self):
         """Initialize default preferred rhythmic grid if not provided."""
@@ -303,7 +304,8 @@ def detect_call_response(
     logger.info(f"Starting call-response detection for {len(motifs)} motifs")
     logger.info(f"Config: min_offset={config.min_offset_bars} bars, "
                 f"max_offset={config.max_offset_bars} bars, "
-                f"min_similarity={config.min_similarity}")
+                f"min_similarity={config.min_similarity}, "
+                f"use_full_mix={config.use_full_mix}")
     
     # Convert bar offsets to seconds
     min_offset_seconds = bars_to_seconds(config.min_offset_bars, bpm)
@@ -314,8 +316,9 @@ def detect_call_response(
     
     # For each motif as a potential call
     for call_motif in motifs:
-        # Skip full_mix as call - prioritize cross-stem relationships
-        if call_motif.stem_role == "full_mix":
+        # Skip full_mix as call unless explicitly enabled
+        # The Region Map's 5-layer view is stem-centric; we intentionally ignore full-mix motifs here.
+        if call_motif.stem_role == "full_mix" and not config.use_full_mix:
             continue
         
         # Find potential responses within time window
@@ -333,7 +336,12 @@ def detect_call_response(
             if call_motif.id == response_motif.id:
                 continue
             
-            # Skip full_mix → full_mix pairs
+            # Skip full_mix as response unless explicitly enabled
+            # The Region Map's 5-layer view is stem-centric; we intentionally ignore full-mix motifs here.
+            if response_motif.stem_role == "full_mix" and not config.use_full_mix:
+                continue
+            
+            # Skip full_mix → full_mix pairs (even if use_full_mix=True, these are less useful)
             if call_motif.stem_role == "full_mix" and response_motif.stem_role == "full_mix":
                 continue
             

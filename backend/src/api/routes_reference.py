@@ -272,12 +272,14 @@ async def analyze_reference(
         logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
         
         # Detect call-response relationships
+        # The Region Map's 5-layer view is stem-centric; we intentionally ignore full-mix motifs here.
         logger.info(f"Detecting call-response relationships for reference {reference_id}")
         call_response_config = CallResponseConfig(
             min_offset_bars=DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
             max_offset_bars=DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
             min_similarity=DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
-            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
+            use_full_mix=False  # Stem-only mode for 5-layer Region Map view
         )
         call_response_pairs = detect_call_response(instances, regions, bundle.bpm, config=call_response_config)
         

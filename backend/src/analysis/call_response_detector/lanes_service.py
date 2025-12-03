@@ -75,10 +75,12 @@ def build_call_response_lanes(
     This function maps existing call/response analysis into per-stem lane events.
     Only uses stem-level call/response info (ignores full-mix motifs).
     
+    The Region Map's 5-layer view is stem-centric; we intentionally ignore full-mix motifs here.
+    
     Args:
         reference_id: ID of the reference bundle
         regions: List of detected regions (in timeline order)
-        call_response_pairs: List of detected call/response pairs
+        call_response_pairs: List of detected call/response pairs (should be stem-only if use_full_mix=False)
         bpm: Beats per minute for time-to-bar conversion
         motif_instances: Optional list of motif instances (for getting end times)
     
