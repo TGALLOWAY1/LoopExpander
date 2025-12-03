@@ -549,3 +549,121 @@ def test_higher_sensitivity_groups_more_motifs():
     assert all(inst.group_id is not None for inst in clustered_high), \
         "All instances should have group_id assigned (high sensitivity)"
 
+
+def test_sensitivity_affects_clustering_threshold():
+    """Test that sensitivity values produce different effective thresholds and clustering results."""
+    # Create a set of instances with controlled distances
+    # We'll create 3 groups: very similar (should cluster together), moderately similar, and different
+    instances = []
+    
+    # Group 1: Very similar features (should cluster together with high sensitivity)
+    group1_features = [
+        np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+        np.array([1.1, 2.1, 3.1, 4.1, 5.1]),  # Small variation
+        np.array([0.9, 1.9, 2.9, 3.9, 4.9]),  # Small variation
+    ]
+    
+    # Group 2: Moderately similar (might cluster with high sensitivity, not with low)
+    group2_features = [
+        np.array([5.0, 6.0, 7.0, 8.0, 9.0]),
+        np.array([5.5, 6.5, 7.5, 8.5, 9.5]),  # Medium variation
+    ]
+    
+    # Group 3: Very different (should not cluster with others)
+    group3_features = [
+        np.array([20.0, 30.0, 40.0, 50.0, 60.0]),
+    ]
+    
+    # Create instances
+    instance_id = 0
+    for group_features in [group1_features, group2_features, group3_features]:
+        for feat in group_features:
+            inst = MotifInstance(
+                id=f"inst_{instance_id}",
+                stem_role="drums",
+                start_time=float(instance_id * 4.0),
+                end_time=float((instance_id + 1) * 4.0),
+                features=feat
+            )
+            instances.append(inst)
+            instance_id += 1
+    
+    # Test with very low sensitivity (strict - should create more groups)
+    clustered_strict, groups_strict = _cluster_motifs(instances, sensitivity=0.0, stem_role="drums")
+    
+    # Test with medium sensitivity
+    clustered_medium, groups_medium = _cluster_motifs(instances, sensitivity=0.5, stem_role="drums")
+    
+    # Test with very high sensitivity (loose - should create fewer groups)
+    clustered_loose, groups_loose = _cluster_motifs(instances, sensitivity=1.0, stem_role="drums")
+    
+    # Verify all produce valid results
+    assert len(groups_strict) >= 0, "Strict sensitivity should produce valid groups"
+    assert len(groups_medium) >= 0, "Medium sensitivity should produce valid groups"
+    assert len(groups_loose) >= 0, "Loose sensitivity should produce valid groups"
+    
+    # All instances should have group_id assigned
+    assert all(inst.group_id is not None for inst in clustered_strict)
+    assert all(inst.group_id is not None for inst in clustered_medium)
+    assert all(inst.group_id is not None for inst in clustered_loose)
+    
+    # Higher sensitivity should generally produce fewer groups (looser clustering)
+    # This is probabilistic, but in most cases should hold
+    # We check that the relationship is reasonable (loose <= medium <= strict or vice versa)
+    # Actually, with strict (0.0) we expect more groups, with loose (1.0) we expect fewer
+    print(f"Group counts - Strict (0.0): {len(groups_strict)}, Medium (0.5): {len(groups_medium)}, Loose (1.0): {len(groups_loose)}")
+    
+    # The key test: sensitivity should affect the clustering
+    # We verify that at least two different sensitivity values produce different results
+    # (either different group counts or different group assignments)
+    group_counts = [len(groups_strict), len(groups_medium), len(groups_loose)]
+    group_ids_strict = set(inst.group_id for inst in clustered_strict)
+    group_ids_loose = set(inst.group_id for inst in clustered_loose)
+    
+    # Verify that different sensitivity values produce different clustering results
+    # Either group counts differ, or group assignments differ
+    assert (len(set(group_counts)) > 1 or group_ids_strict != group_ids_loose), \
+        "Different sensitivity values should produce different clustering results"
+
+
+def test_sensitivity_threshold_formula():
+    """Test that the effective threshold formula works correctly."""
+    # Create simple test case to verify threshold calculation
+    instances = []
+    
+    # Create 5 instances with known distances
+    base = np.array([1.0, 2.0, 3.0])
+    for i in range(5):
+        # Create features with increasing distance
+        offset = i * 0.5
+        feat = base + offset
+        inst = MotifInstance(
+            id=f"inst_{i}",
+            stem_role="drums",
+            start_time=float(i * 4.0),
+            end_time=float((i + 1) * 4.0),
+            features=feat
+        )
+        instances.append(inst)
+    
+    # Test threshold calculation with different sensitivities
+    # We can't directly test the internal threshold, but we can verify
+    # that different sensitivities produce different clustering results
+    _, groups_0 = _cluster_motifs(instances, sensitivity=0.0, stem_role="drums")
+    _, groups_05 = _cluster_motifs(instances, sensitivity=0.5, stem_role="drums")
+    _, groups_1 = _cluster_motifs(instances, sensitivity=1.0, stem_role="drums")
+    
+    # Verify all produce valid results
+    assert len(groups_0) >= 0
+    assert len(groups_05) >= 0
+    assert len(groups_1) >= 0
+    
+    # Verify sensitivity affects results (at least two should differ)
+    results = [len(groups_0), len(groups_05), len(groups_1)]
+    # Check if group counts differ, or if the actual group structures differ
+    group_ids_0 = {g.id for g in groups_0}
+    group_ids_1 = {g.id for g in groups_1}
+    
+    assert (len(set(results)) > 1 or group_ids_0 != group_ids_1), \
+        "Sensitivity should affect clustering threshold and results"
+

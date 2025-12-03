@@ -223,19 +223,27 @@ def _cluster_motifs(
     scaler = StandardScaler()
     features_normalized = scaler.fit_transform(feature_matrix)
     
-    # Compute distance threshold based on sensitivity
-    # sensitivity 0.0 -> very small eps (strict), sensitivity 1.0 -> larger eps (loose)
-    # Use percentile of pairwise distances
+    # Compute base threshold from pairwise distances
+    # Use median distance as the base threshold for consistent scaling
     from scipy.spatial.distance import pdist
     distances = pdist(features_normalized, metric='euclidean')
-    eps_percentile = 5.0 + (sensitivity * 45.0)  # Range from 5th to 50th percentile
-    eps = np.percentile(distances, eps_percentile)
+    base_threshold = np.median(distances) if len(distances) > 0 else 1.0
     
-    # Ensure minimum eps to avoid too many clusters
-    min_eps = np.percentile(distances, 2.0)
-    max_eps = np.percentile(distances, 50.0)
-    eps = np.clip(eps, min_eps, max_eps)
+    # Calculate effective threshold based on sensitivity
+    # Formula: effective_threshold = base_threshold * (1.0 + 0.5 * stem_sensitivity)
+    # This ensures:
+    #   - sensitivity = 0.0 → effective_threshold = base_threshold * 1.0 (strict, smaller threshold)
+    #   - sensitivity = 1.0 → effective_threshold = base_threshold * 1.5 (loose, larger threshold)
+    # Lower sensitivity → smaller threshold → stricter grouping (more groups)
+    # Higher sensitivity → larger threshold → looser grouping (fewer groups)
+    effective_threshold = base_threshold * (1.0 + 0.5 * sensitivity)
     
+    # Ensure minimum and maximum bounds to avoid extreme clustering
+    min_eps = np.percentile(distances, 2.0) if len(distances) > 0 else 0.1
+    max_eps = np.percentile(distances, 75.0) if len(distances) > 0 else 10.0
+    eps = np.clip(effective_threshold, min_eps, max_eps)
+    
+    logger.debug(f"[Motifs] Stem={stem_role or 'unknown'} sensitivity={sensitivity:.3f} base_threshold={base_threshold:.4f} effective_threshold={effective_threshold:.4f} eps={eps:.4f}")
     logger.info(f"Clustering {len(instances)} motifs with sensitivity={sensitivity:.2f}, eps={eps:.4f}")
     
     # Apply DBSCAN
