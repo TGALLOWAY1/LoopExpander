@@ -241,6 +241,27 @@ def _cluster_motifs(
     # Use median distance as the base threshold for consistent scaling
     from scipy.spatial.distance import pdist
     distances = pdist(features_normalized, metric='euclidean')
+    
+    # DIAGNOSTIC: Log distance statistics before clustering
+    if len(distances) > 0:
+        min_dist = np.min(distances)
+        max_dist = np.max(distances)
+        mean_dist = np.mean(distances)
+        # Get first 20 distances (or all if fewer)
+        first_20_dists = distances[:min(20, len(distances))].tolist()
+        
+        logger.info(
+            "[DIAG] Stem=%s motif stats: min_dist=%.4f max_dist=%.4f mean_dist=%.4f median_dist=%.4f",
+            stem_role or "unknown", min_dist, max_dist, mean_dist, np.median(distances)
+        )
+        logger.info(
+            "[DIAG] First 20 dists (stem=%s): %s",
+            stem_role or "unknown",
+            [f"{d:.4f}" for d in first_20_dists]
+        )
+    else:
+        logger.warning("[DIAG] Stem=%s: No pairwise distances computed (empty or single instance)", stem_role or "unknown")
+    
     base_threshold = np.median(distances) if len(distances) > 0 else 1.0
     
     # Calculate effective threshold based on sensitivity
