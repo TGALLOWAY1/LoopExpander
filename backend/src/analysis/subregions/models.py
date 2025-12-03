@@ -1,6 +1,13 @@
 """Models for subregion pattern analysis."""
 from dataclasses import dataclass
-from typing import Literal, Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List
+
+try:
+    from typing import Literal
+except ImportError:
+    # Python < 3.8 compatibility
+    from typing_extensions import Literal
+
 from pydantic import BaseModel, Field
 
 
