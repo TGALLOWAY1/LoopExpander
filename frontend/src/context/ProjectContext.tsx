@@ -8,7 +8,8 @@ import {
   MotifGroup, 
   CallResponsePair, 
   Fill,
-  RegionSubRegions
+  RegionSubRegions,
+  ReferenceAnnotations
 } from '../api/reference';
 
 /**
@@ -22,12 +23,14 @@ export type ProjectState = {
   callResponsePairs: CallResponsePair[];
   fills: Fill[];
   subregionsByRegionId: Record<string, RegionSubRegions>;
+  annotations: ReferenceAnnotations | null;
   setReferenceId: (id: string | null) => void;
   setRegions: (regions: Region[]) => void;
   setMotifs: (motifs: MotifInstance[], groups: MotifGroup[]) => void;
   setCallResponsePairs: (pairs: CallResponsePair[]) => void;
   setFills: (fills: Fill[]) => void;
   setSubregions: (subregions: RegionSubRegions[]) => void;
+  setAnnotations: (annotations: ReferenceAnnotations | null) => void;
 };
 
 /**
@@ -41,6 +44,7 @@ const defaultState: ProjectState = {
   callResponsePairs: [],
   fills: [],
   subregionsByRegionId: {},
+  annotations: null,
   setReferenceId: () => {
     console.warn('setReferenceId called outside ProjectProvider');
   },
@@ -58,6 +62,9 @@ const defaultState: ProjectState = {
   },
   setSubregions: () => {
     console.warn('setSubregions called outside ProjectProvider');
+  },
+  setAnnotations: () => {
+    console.warn('setAnnotations called outside ProjectProvider');
   },
 };
 
@@ -97,6 +104,7 @@ export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element
   const [callResponsePairs, setCallResponsePairs] = useState<CallResponsePair[]>([]);
   const [fills, setFills] = useState<Fill[]>([]);
   const [subregionsByRegionId, setSubregionsByRegionId] = useState<Record<string, RegionSubRegions>>({});
+  const [annotations, setAnnotations] = useState<ReferenceAnnotations | null>(null);
 
   const setMotifs = (newMotifs: MotifInstance[], newGroups: MotifGroup[]) => {
     setMotifsState(newMotifs);
@@ -119,12 +127,14 @@ export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element
     callResponsePairs,
     fills,
     subregionsByRegionId,
+    annotations,
     setReferenceId,
     setRegions,
     setMotifs,
     setCallResponsePairs,
     setFills,
     setSubregions,
+    setAnnotations,
   };
 
   return (

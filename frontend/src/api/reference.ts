@@ -408,3 +408,95 @@ export async function fetchReferenceSubregions(
   };
 }
 
+/**
+ * Annotation block type matching backend model.
+ */
+export interface AnnotationBlock {
+  id: string;
+  startBar: number;
+  endBar: number;
+  label?: string | null;
+}
+
+/**
+ * Annotation lane type matching backend model.
+ */
+export interface AnnotationLane {
+  stemCategory: StemCategory;
+  blocks: AnnotationBlock[];
+}
+
+/**
+ * Region annotations type matching backend model.
+ */
+export interface RegionAnnotations {
+  regionId: string;
+  lanes: AnnotationLane[];
+  regionNotes?: string | null;
+}
+
+/**
+ * Reference annotations type matching backend model.
+ */
+export interface ReferenceAnnotations {
+  referenceId: string;
+  regions: RegionAnnotations[];
+}
+
+/**
+ * Fetch Visual Composer annotations for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @returns Promise with annotations data, or empty structure if none exist or feature is disabled
+ */
+export async function getAnnotations(referenceId: string): Promise<ReferenceAnnotations> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/annotations`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  // If 404 (feature disabled or not found), return empty structure
+  if (response.status === 404) {
+    return {
+      referenceId,
+      regions: [],
+    };
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch annotations' }));
+    throw new Error(error.detail || `Failed to fetch annotations with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Save Visual Composer annotations for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @param data - Annotations data to save
+ * @returns Promise with saved annotations data
+ */
+export async function saveAnnotations(
+  referenceId: string,
+  data: ReferenceAnnotations
+): Promise<ReferenceAnnotations> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/annotations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to save annotations' }));
+    throw new Error(error.detail || `Failed to save annotations with status ${response.status}`);
+  }
+
+  return response.json();
+}
+

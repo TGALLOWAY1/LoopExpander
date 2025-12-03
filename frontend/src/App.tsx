@@ -5,9 +5,13 @@ import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
 import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
+import VisualComposerPage from './pages/VisualComposerPage';
 import './App.css';
 
-type Page = 'ingest' | 'regions';
+type Page = 'ingest' | 'regions' | 'visualComposer';
+
+// Feature flag for Visual Composer
+const VISUAL_COMPOSER_ENABLED = import.meta.env.VITE_VISUAL_COMPOSER_ENABLED === 'true';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
@@ -39,7 +43,18 @@ function App(): JSX.Element {
       </header>
       <main>
         {currentPage === 'ingest' && <IngestPage onAnalysisComplete={() => setCurrentPage('regions')} />}
-        {currentPage === 'regions' && <RegionMapPage />}
+        {currentPage === 'regions' && (
+          <RegionMapPage 
+            onVisualComposerClick={
+              VISUAL_COMPOSER_ENABLED && referenceId && regions.length > 0
+                ? () => setCurrentPage('visualComposer')
+                : undefined
+            }
+          />
+        )}
+        {currentPage === 'visualComposer' && (
+          <VisualComposerPage onBack={() => setCurrentPage('regions')} />
+        )}
       </main>
     </div>
   );
