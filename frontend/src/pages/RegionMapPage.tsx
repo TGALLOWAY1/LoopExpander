@@ -183,7 +183,10 @@ function RegionMapPage(): JSX.Element {
             <span>Regions: {regions.length}</span>
             <span>Duration: {totalDuration.toFixed(1)}s</span>
             {(loadingMotifs || loadingCallResponse || loadingFills || loadingSubregions) && (
-              <span className="loading-indicator">Loading analysis data...</span>
+              <span className="loading-indicator">
+                Loading analysis data...
+                {loadingSubregions && ' (patterns...)'}
+              </span>
             )}
           </div>
           {error && (
@@ -260,17 +263,25 @@ function RegionMapPage(): JSX.Element {
               </div>
 
               <div className="region-blocks-container">
-                {regions.map((region) => (
-                  <RegionBlock
-                    key={region.id}
-                    region={region}
-                    totalDuration={totalDuration}
-                    motifs={motifs}
-                    motifGroups={motifGroups}
-                    highlightedGroupId={highlightedGroupId}
-                    onMotifHover={setHighlightedGroupId}
-                  />
-                ))}
+                {regions.map((region) => {
+                  // Get subregions for this region
+                  const subregions = subregionsByRegionId[region.id] || null;
+                  
+                  return (
+                    <RegionBlock
+                      key={region.id}
+                      region={region}
+                      totalDuration={totalDuration}
+                      motifs={motifs}
+                      motifGroups={motifGroups}
+                      highlightedGroupId={highlightedGroupId}
+                      onMotifHover={setHighlightedGroupId}
+                      subregions={subregions}
+                      bpm={120} // TODO: Get BPM from context or reference bundle
+                      showMotifDots={false} // Use DNA lanes instead of old dot overlay
+                    />
+                  );
+                })}
               </div>
             </div>
 

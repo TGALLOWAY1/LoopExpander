@@ -3,12 +3,13 @@
  */
 .region-block {
   min-width: 80px;
-  height: 80px;
+  height: auto;
+  min-height: 120px;
   border: 2px solid;
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   padding: 0.5rem;
   transition: transform 0.2s, box-shadow 0.2s;
@@ -23,6 +24,26 @@
 .region-block-content {
   text-align: center;
   width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.region-block-lanes {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.region-block-lanes-loading {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 0.25rem;
+  text-align: center;
+}
+
+.loading-patterns {
+  font-size: 0.7rem;
+  color: #999;
+  font-style: italic;
 }
 
 .region-name {

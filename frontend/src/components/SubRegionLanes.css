@@ -1,0 +1,107 @@
+/**
+ * Styles for SubRegionLanes component.
+ */
+
+.subregion-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 0.25rem 0;
+}
+
+.subregion-lane {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  min-height: 16px;
+  position: relative;
+}
+
+.subregion-lane-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #666;
+  min-width: 35px;
+  text-align: right;
+  padding-right: 0.5rem;
+  user-select: none;
+}
+
+.subregion-lane-blocks {
+  flex: 1;
+  position: relative;
+  height: 100%;
+  min-height: 12px;
+}
+
+.subregion-block {
+  position: absolute;
+  height: 12px;
+  min-width: 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.subregion-block:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.subregion-block--variation {
+  border-width: 2px !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 255, 255, 0.1) 2px,
+    rgba(255, 255, 255, 0.1) 4px
+  );
+}
+
+.subregion-block--silence {
+  background-color: transparent !important;
+  border-width: 1px !important;
+  opacity: 0.15 !important;
+}
+
+.subregion-block--highlighted {
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+  transform: translateY(-1px);
+}
+
+.subregion-block-label {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+  pointer-events: none;
+}
+
+/* Responsive: ensure blocks don't become too small */
+@media (max-width: 768px) {
+  .subregion-lane-label {
+    min-width: 30px;
+    font-size: 0.6rem;
+  }
+  
+  .subregion-block {
+    min-width: 1px;
+  }
+  
+  .subregion-block-label {
+    font-size: 0.55rem;
+  }
+}
+
