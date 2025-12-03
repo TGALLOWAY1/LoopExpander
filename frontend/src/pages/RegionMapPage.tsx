@@ -344,6 +344,7 @@ function RegionMapPage(): JSX.Element {
               regions={regions}
               onGroupClick={setHighlightedGroupId}
               highlightedGroupId={highlightedGroupId}
+              loading={loadingMotifs}
             />
             <CallResponsePanel
               pairs={callResponsePairs}
