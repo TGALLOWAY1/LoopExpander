@@ -327,6 +327,49 @@ export function useVisualComposerAnnotations(
     };
   }, []);
 
+  // Add lane function - updates vcAnnotations for a specific region
+  const addLane = useCallback((regionId: string) => {
+    setAnnotationsWithAutosave(prev => {
+      if (!prev) return prev;
+
+      const regions = prev.regions ?? [];
+      const idx = regions.findIndex(r => r.regionId === regionId);
+      if (idx === -1) return prev;
+
+      const target = regions[idx];
+
+      const newLaneId = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `lane-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      // Pick a color from a simple palette
+      const laneColors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#F38181', '#AA96DA', '#FCBAD3', '#A8E6CF'];
+      const colorIndex = (target.lanes?.length ?? 0) % laneColors.length;
+      const color = laneColors[colorIndex];
+
+      const newLane = {
+        id: newLaneId,
+        name: `New Lane`,
+        color: color,
+        collapsed: false,
+        order: target.lanes?.length ?? 0,
+      };
+
+      const updatedRegion = {
+        ...target,
+        lanes: [...(target.lanes ?? []), newLane],
+      };
+
+      const updatedRegions = [...regions];
+      updatedRegions[idx] = updatedRegion;
+
+      return {
+        ...prev,
+        regions: updatedRegions,
+      };
+    });
+  }, [setAnnotationsWithAutosave]);
+
   return {
     annotations,
     setAnnotations: setAnnotationsWithAutosave,
@@ -339,6 +382,7 @@ export function useVisualComposerAnnotations(
     isDirty,
     forceSave,
     retryLoad: loadAnnotations, // Retry function for initial load failures
+    addLane, // Add lane function
   };
 }
 

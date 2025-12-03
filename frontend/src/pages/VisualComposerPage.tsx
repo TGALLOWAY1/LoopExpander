@@ -52,6 +52,8 @@ import { ComposerTimeline } from '../components/visualComposer/ComposerTimeline'
 import { NotesPanel } from '../components/visualComposer/NotesPanel';
 import './VisualComposerPage.css';
 
+const __DEV__ = import.meta.env.MODE !== "production";
+
 interface VisualComposerPageProps {
   onBack: () => void;
   demoMode?: boolean;
@@ -213,6 +215,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     isDirty,
     forceSave,
     retryLoad,
+    addLane: addLaneToVcAnnotations,
   } = useVisualComposerAnnotations(projectId, demoMode, demoRegions);
 
   // Debug logs after useVisualComposerAnnotations hook
@@ -343,6 +346,35 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
+
+  // Debug state for development
+  const vcDebugState = {
+    regions: effectiveRegions?.map(r => ({
+      id: r.id ?? (r as any).regionId,
+      name: r.name,
+      startBar: (r as any).startBar,
+      endBar: (r as any).endBar,
+    })) ?? [],
+    selectedRegionId,
+    annotationsRegions: vcAnnotations?.regions?.map(r => ({
+      regionId: r.regionId,
+      name: r.regionName,
+      lanes: r.lanes?.map(l => ({
+        laneId: l.id,
+        label: l.name,
+        blocks: r.blocks?.filter(b => b.laneId === l.id).length ?? 0,
+      })) ?? [],
+    })) ?? [],
+    localRegionAnnotations: localRegionAnnotations && {
+      regionId: localRegionAnnotations.regionId,
+      name: localRegionAnnotations.name,
+      lanes: localRegionAnnotations.lanes?.map(l => ({
+        laneId: l.id,
+        label: l.name,
+        blocks: localRegionAnnotations.blocks?.filter(b => b.laneId === l.id).length ?? 0,
+      })) ?? [],
+    },
+  };
 
   // Color palette for lanes (rotates through these colors)
   const LANE_COLORS = [
@@ -548,38 +580,17 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   // ============================================================================
 
   /**
-   * Adds a new lane to localRegionAnnotations.
-   * Creates a lane with generated ID, default name, rotating color, and proper order.
-   * Automatically syncs to Vc annotations via useEffect.
-   * Also ensures the region exists in Vc annotations if it doesn't already.
+   * Adds a new lane to the current region's annotations.
+   * Updates both vcAnnotations (via hook) and localRegionAnnotations (local state).
    */
-  const addLane = useCallback(() => {
-    if (!localRegionAnnotations || !selectedRegionId || !referenceId) return;
+  const handleAddLane = useCallback(() => {
+    if (!selectedRegionId) return;
 
-    // Ensure region exists in Vc annotations (create on demand)
-    if (!vcAnnotations) {
-      const newVcAnnotations: VcAnnotations = {
-        projectId: referenceId,
-        regions: [regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null)],
-      };
-      setVcAnnotations(newVcAnnotations);
-    } else {
-      // Use functional update to check if region exists
-      setVcAnnotations(prev => {
-        if (!prev) return prev;
-        const regionExists = prev.regions.some(r => r.regionId === selectedRegionId);
-        if (!regionExists) {
-          const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
-          return {
-            ...prev,
-            regions: [...prev.regions, newRegion],
-          };
-        }
-        return prev;
-      });
-    }
+    // Update vcAnnotations via hook
+    addLaneToVcAnnotations(selectedRegionId);
 
-    const lanes = localRegionAnnotations.lanes || [];
+    // Also update localRegionAnnotations immediately for responsive UI
+    const lanes = localRegionAnnotations?.lanes || [];
     const maxOrder = lanes.length > 0 
       ? Math.max(...lanes.map(l => l.order ?? 0))
       : -1;
@@ -589,22 +600,26 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     const colorIndex = lanes.length % LANE_COLORS.length;
     const color = LANE_COLORS[colorIndex];
     
+    const newLaneId = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `lane-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    
     const newLane: AnnotationLane = {
-      id: createLaneId(),
-      name: `Lane ${lanes.length + 1}`,
+      id: newLaneId,
+      name: `New Lane`,
       color,
       collapsed: false,
       order: nextOrder,
     };
 
     setLocalRegionAnnotations(prev => {
-      if (!prev) return prev;
+      if (!prev || prev.regionId !== selectedRegionId) return prev;
       return {
         ...prev,
         lanes: [...(prev.lanes || []), newLane],
       };
     });
-  }, [localRegionAnnotations, regionId, referenceId, vcAnnotations, setVcAnnotations, currentRegion, createLaneId]);
+  }, [selectedRegionId, addLaneToVcAnnotations, localRegionAnnotations]);
 
   /**
    * Updates a lane by ID with a partial patch of properties.
@@ -1011,7 +1026,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   }
 
   return (
-    <div className="visual-composer-page">
+    <div className="visual-composer-page" data-testid="visual-composer-page">
       <div className="visual-composer-header">
         <button className="back-button" onClick={onBack}>
           ← Back to Region Map
@@ -1099,24 +1114,28 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
       </div>
 
       <div className="visual-composer-content">
-        {/* Lanes section - show whenever currentRegion exists and localRegionAnnotations is not null */}
-        {currentRegion && localRegionAnnotations ? (
-          <div className="lanes-section">
-            <LaneList
-              lanes={localRegionAnnotations.lanes ?? []}
-              onChangeLane={updateLane}
-              onDeleteLane={deleteLane}
-              onReorderLanes={reorderLanes}
-              onAddLane={addLane}
-            />
-          </div>
-        ) : (
-          <div className="lanes-section">
-            <div className="lanes-empty-state">
-              <p>{!currentRegion ? 'No region selected. Please select a region.' : 'Loading region annotations...'}</p>
+        {/* Waveform placeholder (demo mode) or real waveform */}
+        {currentRegion && (() => {
+          const regionWithBars = currentRegion as typeof currentRegion & { startBar?: number | null; endBar?: number | null };
+          const hasBarRange = currentRegionBarRange || (regionWithBars?.startBar !== null && regionWithBars?.startBar !== undefined && regionWithBars?.endBar !== null && regionWithBars?.endBar !== undefined);
+          
+          if (!hasBarRange) return null;
+          
+          return (
+            <div className="vc-waveform-section">
+              {demoMode ? (
+                <div className="vc-waveform-placeholder" style={{ padding: "1rem", background: "#f0f0f0", borderRadius: "4px", textAlign: "center", color: "#666" }}>
+                  Waveform demo placeholder (no audio in demo mode yet)
+                </div>
+              ) : (
+                // TODO: Add real waveform component when audio is available
+                <div className="vc-waveform-placeholder" style={{ padding: "1rem", background: "#f0f0f0", borderRadius: "4px", textAlign: "center", color: "#666" }}>
+                  Waveform (audio not yet implemented)
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Timeline area - show whenever currentRegion exists and we can calculate bar range */}
         {(() => {
@@ -1145,6 +1164,55 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
           );
         })()}
 
+        {/* Lanes section - show whenever currentRegion exists and localRegionAnnotations is not null */}
+        {currentRegion && localRegionAnnotations ? (
+          <div className="lanes-section">
+            <div className="lanes-container">
+              {(() => {
+                const lanes = localRegionAnnotations.lanes ?? [];
+                
+                if (lanes.length > 0) {
+                  return (
+                    <div className="lanes-list">
+                      {lanes.map(lane => (
+                        <div key={lane.id} className="vc-lane-row" style={{ padding: "0.5rem", marginBottom: "0.5rem", border: "1px solid #ddd", borderRadius: "4px", background: "#fff" }}>
+                          <div className="vc-lane-label" style={{ fontWeight: "500", marginBottom: "0.25rem" }}>{lane.name}</div>
+                          <div className="vc-lane-track" style={{ minHeight: "40px", background: "#f9f9f9", borderRadius: "2px" }}>
+                            {/* Lane track area - blocks will go here */}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="vc-lane-empty" style={{ padding: "2rem", textAlign: "center", color: "#666" }}>
+                      <p>No lanes yet — click "Add Lane" to create your first sound lane.</p>
+                    </div>
+                  );
+                }
+              })()}
+              
+              <div className="lanes-actions" style={{ marginTop: "1rem" }}>
+                <button
+                  type="button"
+                  className="vc-add-lane-button"
+                  onClick={handleAddLane}
+                  style={{ padding: "0.75rem 1.5rem", fontSize: "0.9rem", fontWeight: "500", color: "white", background: "#1976d2", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                >
+                  + Add Lane
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="lanes-section">
+            <div className="lanes-empty-state">
+              <p>{!currentRegion ? 'No region selected. Please select a region.' : 'Loading region annotations...'}</p>
+            </div>
+          </div>
+        )}
+
         <div className="visual-composer-sidebar">
           <div className="region-notes-section">
             <h3>Region Notes</h3>
@@ -1165,6 +1233,15 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
             />
           </div>
         </div>
+
+        {__DEV__ && (
+          <div style={{ marginTop: "1rem", padding: "0.75rem", fontSize: "0.75rem", background: "#111", color: "#ddd", borderRadius: 4 }}>
+            <strong>Visual Composer Debug</strong>
+            <pre style={{ whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(vcDebugState, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );
