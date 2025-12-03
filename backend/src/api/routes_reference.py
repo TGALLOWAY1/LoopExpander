@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from models.store import (
     REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
     REFERENCE_CALL_RESPONSE, REFERENCE_FILLS, REFERENCE_MOTIF_INSTANCES_RAW,
-    REFERENCE_SUBREGIONS
+    REFERENCE_SUBREGIONS, REFERENCE_ANNOTATIONS
 )
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
@@ -32,6 +32,7 @@ from analysis.call_response_detector.lanes_models import CallResponseByStemRespo
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
 from analysis.subregions.models import RegionSubRegionsDTO
+from models.annotations import ReferenceAnnotations, RegionAnnotations
 from config import DEFAULT_SUBREGION_BARS_PER_CHUNK, DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
 from config import (
     DEFAULT_MOTIF_SENSITIVITY,
@@ -42,7 +43,8 @@ from config import (
     DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
     DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
     DEFAULT_FILL_MIN_TRANSIENT_DENSITY,
-    USE_FULL_MIX_FOR_LANE_VIEW
+    USE_FULL_MIX_FOR_LANE_VIEW,
+    VISUAL_COMPOSER_ENABLED
 )
 from utils.logger import get_logger
 
@@ -63,11 +65,11 @@ def _get_gallium_test_paths() -> Dict[str, Path]:
     """Get file paths for Gallium test stems."""
     root = _get_project_root() / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
     return {
-        "drums": root / "D - 130BPM - GalliumMakeEmWatch Drums.wav",
-        "bass": root / "D - 130BPM - GalliumMakeEmWatch Bass.wav",
-        "vocals": root / "D - 130BPM - GalliumMakeEmWatch Vocals.wav",
-        "instruments": root / "D - 130BPM - GalliumMakeEmWatch Instruments.wav",
-        "full_mix": root / "D - 130BPM - GalliumMakeEmWatch Full.wav",
+        "drums": root / "DRUMS.wav",
+        "bass": root / "BASS.wav",
+        "vocals": root / "VOCALS.wav",
+        "instruments": root / "INSTRUMENTS.wav",
+        "full_mix": root / "FULL.wav",
     }
 
 
@@ -971,3 +973,97 @@ async def get_subregions(reference_id: str):
         "referenceId": reference_id,
         "regions": [r.model_dump(by_alias=True) for r in regions_dto]
     }
+
+
+@router.get("/{reference_id}/annotations")
+async def get_annotations(reference_id: str):
+    """
+    Get Visual Composer annotations for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with annotations data, or empty structure if none exist
+    
+    Raises:
+        404 if Visual Composer feature is disabled
+        404 if reference bundle not found
+    """
+    # Check feature flag
+    if not VISUAL_COMPOSER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visual Composer disabled"
+        )
+    
+    logger.info(f"Getting annotations for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Return existing annotations or empty structure
+    if reference_id in REFERENCE_ANNOTATIONS:
+        annotations = REFERENCE_ANNOTATIONS[reference_id]
+        return annotations.model_dump()
+    else:
+        # Return empty structure
+        return {
+            "referenceId": reference_id,
+            "regions": []
+        }
+
+
+@router.post("/{reference_id}/annotations")
+async def create_or_update_annotations(
+    reference_id: str,
+    annotations: ReferenceAnnotations = Body(...)
+):
+    """
+    Create or update Visual Composer annotations for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle (must match payload)
+        annotations: Annotations data to store
+    
+    Returns:
+        JSON with stored annotations data
+    
+    Raises:
+        404 if Visual Composer feature is disabled
+        404 if reference bundle not found
+        400 if reference_id in payload doesn't match path parameter
+    """
+    # Check feature flag
+    if not VISUAL_COMPOSER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visual Composer disabled"
+        )
+    
+    logger.info(f"Creating/updating annotations for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Force reference_id in payload to match path parameter
+    if annotations.reference_id != reference_id:
+        logger.warning(
+            f"Reference ID mismatch: path={reference_id}, payload={annotations.reference_id}. "
+            f"Overriding payload reference_id to match path."
+        )
+        annotations.reference_id = reference_id
+    
+    # Store annotations in memory
+    REFERENCE_ANNOTATIONS[reference_id] = annotations
+    logger.info(f"Stored annotations for reference {reference_id}: {len(annotations.regions)} regions")
+    
+    return annotations.model_dump()

@@ -13,7 +13,11 @@ import { useCallResponseLanes } from '../hooks/useCallResponseLanes';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
 
-function RegionMapPage(): JSX.Element {
+interface RegionMapPageProps {
+  onVisualComposerClick?: () => void;
+}
+
+function RegionMapPage({ onVisualComposerClick }: RegionMapPageProps): JSX.Element {
   const { 
     referenceId, 
     regions,
@@ -258,6 +262,34 @@ function RegionMapPage(): JSX.Element {
           {error && (
             <div className="error-message" style={{ color: 'red', marginTop: '10px' }}>
               {error}
+            </div>
+          )}
+          
+          {onVisualComposerClick && (
+            <div style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={onVisualComposerClick}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 500,
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#218838';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#28a745';
+                }}
+              >
+                Visual Composer
+              </button>
             </div>
           )}
           

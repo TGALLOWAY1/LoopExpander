@@ -5,13 +5,15 @@ import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
 import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
+import VisualComposerPage from './pages/VisualComposerPage';
+import { VISUAL_COMPOSER_ENABLED } from './config';
 import './App.css';
 
-type Page = 'ingest' | 'regions';
+type AppView = 'ingest' | 'regionMap' | 'visualComposer';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
-  const [currentPage, setCurrentPage] = useState<Page>('ingest');
+  const [view, setView] = useState<AppView>('ingest');
 
   return (
     <div className="app">
@@ -23,14 +25,14 @@ function App(): JSX.Element {
         </div>
         <nav className="header-nav">
           <button
-            className={currentPage === 'ingest' ? 'nav-button active' : 'nav-button'}
-            onClick={() => setCurrentPage('ingest')}
+            className={view === 'ingest' ? 'nav-button active' : 'nav-button'}
+            onClick={() => setView('ingest')}
           >
             Ingest
           </button>
           <button
-            className={currentPage === 'regions' ? 'nav-button active' : 'nav-button'}
-            onClick={() => setCurrentPage('regions')}
+            className={view === 'regionMap' ? 'nav-button active' : 'nav-button'}
+            onClick={() => setView('regionMap')}
             disabled={!referenceId || regions.length === 0}
           >
             Region Map
@@ -38,8 +40,23 @@ function App(): JSX.Element {
         </nav>
       </header>
       <main>
-        {currentPage === 'ingest' && <IngestPage onAnalysisComplete={() => setCurrentPage('regions')} />}
-        {currentPage === 'regions' && <RegionMapPage />}
+        {view === 'ingest' && <IngestPage onAnalysisComplete={() => setView('regionMap')} />}
+        {view === 'regionMap' && (
+          <>
+            <RegionMapPage />
+            {VISUAL_COMPOSER_ENABLED && view === 'regionMap' && referenceId && (
+              <button
+                style={{ margin: '12px', padding: '8px 12px' }}
+                onClick={() => setView('visualComposer')}
+              >
+                [Dev] Open Visual Composer
+              </button>
+            )}
+          </>
+        )}
+        {view === 'visualComposer' && (
+          <VisualComposerPage onBack={() => setView('regionMap')} />
+        )}
       </main>
     </div>
   );

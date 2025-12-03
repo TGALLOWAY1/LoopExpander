@@ -127,11 +127,11 @@ def _get_gallium_test_paths() -> dict:
     project_root = backend_dir.parent  # project root
     root = project_root / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
     return {
-        "drums": root / "D - 130BPM - GalliumMakeEmWatch Drums.wav",
-        "bass": root / "D - 130BPM - GalliumMakeEmWatch Bass.wav",
-        "vocals": root / "D - 130BPM - GalliumMakeEmWatch Vocals.wav",
-        "instruments": root / "D - 130BPM - GalliumMakeEmWatch Instruments.wav",
-        "full_mix": root / "D - 130BPM - GalliumMakeEmWatch Full.wav",
+        "drums": root / "DRUMS.wav",
+        "bass": root / "BASS.wav",
+        "vocals": root / "VOCALS.wav",
+        "instruments": root / "INSTRUMENTS.wav",
+        "full_mix": root / "FULL.wav",
     }
 
 
