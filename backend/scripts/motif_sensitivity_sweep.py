@@ -90,6 +90,27 @@ def compression(motifs_count: int, groups_count: int) -> float:
     return motifs_count / groups_count
 
 
+def looks_good(comp: float) -> bool:
+    """
+    Check if compression ratio is in the "good" range.
+    
+    Good compression is between 2.0 and 6.0:
+    - Below 2.0: May be over-grouping (too loose)
+    - Above 6.0: May be under-grouping (too strict)
+    - Between 2.0-6.0: Good balance (many motifs → reasonable number of groups)
+    
+    Args:
+        comp: Compression ratio
+    
+    Returns:
+        True if compression is in good range (2.0 <= comp <= 6.0)
+    """
+    # Tweak these bounds after seeing real data
+    if comp == float("inf") or comp == 0.0:
+        return False
+    return 2.0 <= comp <= 6.0
+
+
 def run_sweep(reference_id: str):
     """
     Run motif + grouping + call/response analysis with different sensitivity configs.
@@ -143,6 +164,7 @@ def run_sweep(reference_id: str):
         "comp_bs",
         "comp_vx",
         "comp_in",
+        "good_stems",
         "pairs_dr",
         "pairs_bs",
         "pairs_vx",
@@ -202,6 +224,12 @@ def run_sweep(reference_id: str):
             comp_vx = compression(m_vx, g_vx)
             comp_in = compression(m_in, g_in)
             
+            # Compute "good stems" score (number of stems with good compression)
+            good_stems = sum(
+                looks_good(c)
+                for c in (comp_dr, comp_bs, comp_vx, comp_in)
+            )
+            
             # Print table row
             row = [
                 str(idx),
@@ -221,6 +249,7 @@ def run_sweep(reference_id: str):
                 f"{comp_bs:.2f}" if comp_bs != float("inf") else "inf",
                 f"{comp_vx:.2f}" if comp_vx != float("inf") else "inf",
                 f"{comp_in:.2f}" if comp_in != float("inf") else "inf",
+                str(good_stems),
                 str(pairs_by_stem.get("drums", 0)),
                 str(pairs_by_stem.get("bass", 0)),
                 str(pairs_by_stem.get("vocals", 0)),
@@ -253,6 +282,7 @@ def run_sweep(reference_id: str):
                 "ERROR",
                 "ERROR",
                 "ERROR",
+                "ERROR",
             ]
             print("\t".join(row))
     
@@ -267,6 +297,9 @@ def run_sweep(reference_id: str):
     print("    - Near 1.0 (e.g., 1.02) = over-segmentation (each motif is its own group)")
     print("    - 0.0 = no motifs detected")
     print("    - inf = motifs but no groups")
+    print("  good_stems: Number of stems with good compression (2.0 <= comp <= 6.0)")
+    print("    - High value (3-4) = good candidate for default sensitivity config")
+    print("    - Look for configs with high good_stems AND reasonable motif counts")
     print("  pairs_dr/bs/vx/in: Call/response pairs per stem")
 
 
