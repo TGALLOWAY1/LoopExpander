@@ -23,6 +23,7 @@ from analysis.call_response_detector.call_response_detector import detect_call_r
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
 from analysis.subregions.models import RegionSubRegionsDTO
+from config import DEFAULT_SUBREGION_BARS_PER_CHUNK, DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
 from config import (
     DEFAULT_MOTIF_SENSITIVITY,
     DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
@@ -636,11 +637,11 @@ async def get_subregions(reference_id: str):
         logger.info(f"Returning cached subregions for reference {reference_id}")
         subregions = REFERENCE_SUBREGIONS[reference_id]
     else:
-        # Compute subregions (for now, using stub logic)
+        # Compute subregions using real analysis data
         logger.info(f"Computing subregions for reference {reference_id}")
         
-        # Create placeholder density curves (to be implemented)
-        density_curves = DensityCurves()
+        # Create density curves from bundle (computes RMS envelopes per stem)
+        density_curves = DensityCurves(bundle)
         
         # Compute subregions
         subregions = compute_region_subregions(
@@ -649,7 +650,8 @@ async def get_subregions(reference_id: str):
             motif_groups=motif_groups,
             density_curves=density_curves,
             bpm=bundle.bpm,
-            bars_per_chunk=2
+            bars_per_chunk=DEFAULT_SUBREGION_BARS_PER_CHUNK,
+            silence_threshold=DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
         )
         
         # Cache the result
