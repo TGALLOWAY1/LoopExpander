@@ -36,6 +36,10 @@ DEFAULT_FILL_MIN_TRANSIENT_DENSITY = float(os.environ.get("DEFAULT_FILL_MIN_TRAN
 DEFAULT_SUBREGION_BARS_PER_CHUNK = int(os.environ.get("DEFAULT_SUBREGION_BARS_PER_CHUNK", "2"))
 DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD = float(os.environ.get("DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD", "0.15"))
 
+# Region Map stem lanes configuration
+# NOTE: The Region Map stem lanes are intended to be per-stem only; full-mix motifs are ignored here by design.
+USE_FULL_MIX_FOR_LANE_VIEW = os.environ.get("USE_FULL_MIX_FOR_LANE_VIEW", "false").lower() == "true"
+
 
 def get_settings() -> dict:
     """Get application settings as a dictionary."""

@@ -1,6 +1,13 @@
-"""Call and response detection for identifying lead-lag motif relationships."""
+"""
+Call and response detection for identifying lead-lag motif relationships.
+
+NOTE: For the Region Map stem lanes, we use stem-only call/response analysis.
+Call/response is computed within each stem lane separately using the stem_role
+on motifs. This ensures per-stem lane visualization works correctly.
+"""
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+from collections import defaultdict
 import numpy as np
 from scipy.spatial.distance import cosine
 
@@ -20,6 +27,7 @@ class CallResponseConfig:
     preferred_rhythmic_grid: List[float] = None  # Preferred offsets in bars (e.g., [0.5, 1.0, 2.0, 4.0])
     max_responses_per_call: Optional[int] = None  # Limit number of responses per call (None = no limit)
     min_confidence: float = 0.5  # Minimum confidence to include a pair
+    use_full_mix: bool = False  # Whether to include full-mix motifs in call/response detection
     
     def __post_init__(self):
         """Initialize default preferred rhythmic grid if not provided."""
@@ -279,49 +287,42 @@ def _find_region_for_pair(
     return None
 
 
-def detect_call_response(
-    motifs: List[MotifInstance],
+def _detect_call_response_within_stem(
+    stem_motifs: List[MotifInstance],
     regions: List[Region],
     bpm: float,
-    config: Optional[CallResponseConfig] = None
+    min_offset_seconds: float,
+    max_offset_seconds: float,
+    config: CallResponseConfig,
+    stem_role: str
 ) -> List[CallResponsePair]:
     """
-    Detect call-response relationships between motifs.
+    Detect call-response relationships within a single stem.
+    
+    NOTE: For the Region Map stem lanes, we use stem-only call/response analysis.
+    This function processes motifs from a single stem category only.
     
     Args:
-        motifs: List of detected motif instances
+        stem_motifs: List of motif instances from a single stem
         regions: List of detected regions
         bpm: Beats per minute for time calculations
-        config: Optional configuration (uses defaults if None)
+        min_offset_seconds: Minimum time offset in seconds
+        max_offset_seconds: Maximum time offset in seconds
+        config: Call-response configuration
+        stem_role: The stem role being processed (for logging)
     
     Returns:
-        List of detected call-response pairs
+        List of detected call-response pairs within this stem
     """
-    if config is None:
-        config = CallResponseConfig()
-    
-    logger.info(f"Starting call-response detection for {len(motifs)} motifs")
-    logger.info(f"Config: min_offset={config.min_offset_bars} bars, "
-                f"max_offset={config.max_offset_bars} bars, "
-                f"min_similarity={config.min_similarity}")
-    
-    # Convert bar offsets to seconds
-    min_offset_seconds = bars_to_seconds(config.min_offset_bars, bpm)
-    max_offset_seconds = bars_to_seconds(config.max_offset_bars, bpm)
-    
     pairs = []
     pair_counter = 0
     
     # For each motif as a potential call
-    for call_motif in motifs:
-        # Skip full_mix as call - prioritize cross-stem relationships
-        if call_motif.stem_role == "full_mix":
-            continue
-        
-        # Find potential responses within time window
+    for call_motif in stem_motifs:
+        # Find potential responses within time window (only from same stem)
         potential_responses = _find_potential_responses(
             call_motif,
-            motifs,
+            stem_motifs,  # Only search within same stem
             min_offset_seconds,
             max_offset_seconds,
             bpm
@@ -331,10 +332,6 @@ def detect_call_response(
         for response_motif, offset_seconds in potential_responses:
             # Skip self-instance pairs (defensive check)
             if call_motif.id == response_motif.id:
-                continue
-            
-            # Skip full_mix → full_mix pairs
-            if call_motif.stem_role == "full_mix" and response_motif.stem_role == "full_mix":
                 continue
             
             # Enforce minimum time offset (defensive check - should already be filtered by _find_potential_responses)
@@ -349,10 +346,11 @@ def detect_call_response(
             
             # Debug logging
             logger.debug(
-                "Call/response candidate",
+                "Call/response candidate (within stem)",
                 extra={
-                    "from_role": call_motif.stem_role,
-                    "to_role": response_motif.stem_role,
+                    "stem_role": stem_role,
+                    "from_motif_id": call_motif.id,
+                    "to_motif_id": response_motif.id,
                     "time_offset": round(offset_seconds, 3),
                     "offset_bars": round(offset_bars, 3),
                     "similarity": round(similarity, 3),
@@ -370,14 +368,14 @@ def detect_call_response(
             if confidence < config.min_confidence:
                 continue
             
-            # Create pair
-            pair_id = f"call_response_{pair_counter:04d}"
+            # Create pair (both from and to are same stem_role)
+            pair_id = f"call_response_{stem_role}_{pair_counter:04d}"
             pair = CallResponsePair(
                 id=pair_id,
                 from_motif_id=call_motif.id,
                 to_motif_id=response_motif.id,
-                from_stem_role=call_motif.stem_role,
-                to_stem_role=response_motif.stem_role,
+                from_stem_role=stem_role,
+                to_stem_role=stem_role,  # Intra-stem pair
                 from_time=call_motif.start_time,
                 to_time=response_motif.start_time,
                 time_offset=offset_seconds,
@@ -390,15 +388,117 @@ def detect_call_response(
             pairs.append(pair)
             pair_counter += 1
     
-    logger.info(f"Found {len(pairs)} potential call-response pairs")
+    return pairs
+
+
+def detect_call_response(
+    motifs: List[MotifInstance],
+    regions: List[Region],
+    bpm: float,
+    config: Optional[CallResponseConfig] = None
+) -> List[CallResponsePair]:
+    """
+    Detect call-response relationships between motifs.
+    
+    NOTE: For the Region Map stem lanes, we use stem-only call/response analysis.
+    Call/response is computed within each stem lane separately using the stem_role
+    on motifs. This ensures per-stem lane visualization works correctly.
+    
+    Args:
+        motifs: List of detected motif instances (each with stem_role field)
+        regions: List of detected regions
+        bpm: Beats per minute for time calculations
+        config: Optional configuration (uses defaults if None)
+    
+    Returns:
+        List of detected call-response pairs (intra-stem only when use_full_mix=False)
+    """
+    if config is None:
+        config = CallResponseConfig()
+    
+    logger.info(f"[CallResponse] Starting call-response detection for {len(motifs)} motifs")
+    logger.info(f"[CallResponse] Config: min_offset={config.min_offset_bars} bars, "
+                f"max_offset={config.max_offset_bars} bars, "
+                f"min_similarity={config.min_similarity}, "
+                f"use_full_mix={config.use_full_mix}")
+    
+    # Group motifs by stem_role (stem_category)
+    # NOTE: For the Region Map stem lanes, we use stem-only call/response analysis.
+    by_stem: dict = defaultdict(list)
+    for m in motifs:
+        # Skip full_mix unless explicitly enabled
+        if m.stem_role == "full_mix" and not config.use_full_mix:
+            continue
+        # Only process valid stem categories
+        if m.stem_role in ["drums", "bass", "vocals", "instruments"]:
+            by_stem[m.stem_role].append(m)
+        elif m.stem_role == "full_mix" and config.use_full_mix:
+            by_stem[m.stem_role].append(m)
+    
+    logger.info(
+        "[CallResponse] Grouped motifs by stem_role",
+        extra={
+            "stems_with_motifs": list(by_stem.keys()),
+            "motifs_per_stem": {stem: len(motifs_list) for stem, motifs_list in by_stem.items()}
+        }
+    )
+    
+    # Convert bar offsets to seconds
+    min_offset_seconds = bars_to_seconds(config.min_offset_bars, bpm)
+    max_offset_seconds = bars_to_seconds(config.max_offset_bars, bpm)
+    
+    all_pairs = []
+    
+    # For each stem, detect call/response within that stem only
+    for stem_role, stem_motifs in by_stem.items():
+        logger.info(f"[CallResponse] Processing {stem_role} stem with {len(stem_motifs)} motifs")
+        
+        stem_pairs = _detect_call_response_within_stem(
+            stem_motifs,
+            regions,
+            bpm,
+            min_offset_seconds,
+            max_offset_seconds,
+            config,
+            stem_role
+        )
+        
+        logger.info(
+            f"[CallResponse] Found {len(stem_pairs)} pairs in {stem_role} stem",
+            extra={"stem_role": stem_role, "pair_count": len(stem_pairs)}
+        )
+        
+        all_pairs.extend(stem_pairs)
+    
+    logger.info(f"[CallResponse] Found {len(all_pairs)} potential call-response pairs across all stems")
     
     # Deduplicate
-    pairs = _deduplicate_pairs(pairs)
-    logger.info(f"After deduplication: {len(pairs)} pairs")
+    all_pairs = _deduplicate_pairs(all_pairs)
+    logger.info(f"[CallResponse] After deduplication: {len(all_pairs)} pairs")
     
     # Rank and filter
-    pairs = _rank_and_filter_pairs(pairs, config)
-    logger.info(f"After filtering: {len(pairs)} call-response pairs")
+    all_pairs = _rank_and_filter_pairs(all_pairs, config)
+    logger.info(f"[CallResponse] After filtering: {len(all_pairs)} call-response pairs")
     
-    return pairs
+    # Log summary by stem
+    from collections import Counter
+    pairs_by_stem = Counter([p.from_stem_role for p in all_pairs])
+    logger.info(
+        "[CallResponse] Summary: pairs by stem_role",
+        extra={"pairs_by_stem": dict(pairs_by_stem), "total_pairs": len(all_pairs)}
+    )
+    
+    # Log call/response detection result for sanity check
+    # Use stem_category if available, otherwise fall back to from_stem_role
+    stem_distribution = Counter([
+        getattr(p, "stem_category", p.from_stem_role) if hasattr(p, "stem_category") else p.from_stem_role
+        for p in all_pairs
+    ])
+    logger.info(
+        "[CallResponse] Detected %d call/response pairs (stem distribution: %s)",
+        len(all_pairs),
+        dict(stem_distribution),
+    )
+    
+    return all_pairs
 

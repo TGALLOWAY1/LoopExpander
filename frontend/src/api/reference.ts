@@ -287,6 +287,36 @@ export async function getMotifs(
 }
 
 /**
+ * Re-analyze motifs for a reference bundle using stored sensitivity configuration.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @returns Promise with analysis status and motif counts
+ * @throws Error if the request fails or reference is not found
+ */
+export async function reanalyzeMotifs(referenceId: string): Promise<{
+  referenceId: string;
+  motifInstanceCount: number;
+  motifGroupCount: number;
+  status: string;
+}> {
+  const url = `${API_BASE_URL}/api/reference/${referenceId}/reanalyze-motifs`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to reanalyze motifs' }));
+    throw new Error(error.detail || `Failed to reanalyze motifs with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Fetch detected call-response pairs for a reference bundle.
  * 
  * @param referenceId - ID of the reference bundle

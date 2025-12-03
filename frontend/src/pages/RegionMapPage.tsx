@@ -3,10 +3,13 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { RegionBlock } from '../components/RegionBlock';
+import { FiveLayerRegionMap } from '../components/FiveLayerRegionMap';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
-import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions } from '../api/reference';
+// MotifSensitivityPanel removed from right sidebar - will be moved to lane headers
+// import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
+import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions, reanalyzeMotifs } from '../api/reference';
+import { useCallResponseLanes } from '../hooks/useCallResponseLanes';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
 
@@ -34,6 +37,9 @@ function RegionMapPage(): JSX.Element {
   const [isMotifPaused, setIsMotifPaused] = useState(false);
   const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
   const [highlightedPairId, setHighlightedPairId] = useState<string | null>(null);
+
+  // Load call/response lanes for the 5-layer view
+  const { data: callResponseLanesData, loading: loadingLanes, error: lanesError } = useCallResponseLanes(referenceId);
 
   // Load motifs with current sensitivity
   const loadMotifs = useCallback(async (sensitivity: number) => {
@@ -146,6 +152,66 @@ function RegionMapPage(): JSX.Element {
     }
   }, [motifs]);
 
+  // Handle reanalysis after sensitivity change
+  const handleReanalyze = useCallback(async () => {
+    if (!referenceId) return;
+
+    try {
+      setError(null);
+      
+      // Re-analyze motifs with new sensitivity (uses stored config)
+      await reanalyzeMotifs(referenceId);
+      
+      // Refetch all dependent data
+      // Refetch motifs without sensitivity param to use stored config
+      setLoadingMotifs(true);
+      try {
+        const motifsResponse = await getMotifs(referenceId); // No sensitivity param = uses stored config
+        setMotifs(motifsResponse.instances, motifsResponse.groups);
+      } catch (err) {
+        console.error('Error loading motifs after reanalysis:', err);
+      } finally {
+        setLoadingMotifs(false);
+      }
+      
+      // Refetch call-response pairs
+      setLoadingCallResponse(true);
+      try {
+        const callResponseResponse = await getCallResponse(referenceId);
+        setCallResponsePairs(callResponseResponse.pairs);
+      } catch (err) {
+        console.error('Error loading call-response after reanalysis:', err);
+      } finally {
+        setLoadingCallResponse(false);
+      }
+      
+      // Refetch fills
+      setLoadingFills(true);
+      try {
+        const fillsResponse = await getFills(referenceId);
+        setFills(fillsResponse.fills);
+      } catch (err) {
+        console.error('Error loading fills after reanalysis:', err);
+      } finally {
+        setLoadingFills(false);
+      }
+      
+      // Refetch subregions
+      setLoadingSubregions(true);
+      try {
+        const subregionsResponse = await fetchReferenceSubregions(referenceId);
+        setSubregions(subregionsResponse.regions);
+      } catch (err) {
+        console.error('Error loading subregions after reanalysis:', err);
+      } finally {
+        setLoadingSubregions(false);
+      }
+    } catch (err) {
+      console.error('Error during reanalysis:', err);
+      setError(err instanceof Error ? err.message : 'Failed to reanalyze');
+    }
+  }, [referenceId, setMotifs, setCallResponsePairs, setFills, setSubregions]);
+
   // Compute total duration from the last region's end time
   const totalDuration = regions.length > 0
     ? Math.max(...regions.map((r) => r.end))
@@ -214,13 +280,32 @@ function RegionMapPage(): JSX.Element {
               <span>Strict (0.0)</span>
               <span>Loose (1.0)</span>
             </div>
-            <div className="motif-pause-control" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="motif-pause-control" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="motif-pause-button"
                 onClick={() => setIsMotifPaused(prev => !prev)}
               >
                 {isMotifPaused ? 'Resume Motif Analysis' : 'Pause Motif Analysis'}
+              </button>
+              <button
+                type="button"
+                className="reanalyze-button"
+                onClick={handleReanalyze}
+                disabled={loadingMotifs || loadingCallResponse}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: loadingMotifs || loadingCallResponse ? 'not-allowed' : 'pointer',
+                  opacity: loadingMotifs || loadingCallResponse ? 0.6 : 1,
+                  fontSize: '0.9rem',
+                  fontWeight: 500
+                }}
+              >
+                {loadingMotifs || loadingCallResponse ? 'Re-analyzing...' : 'Re-run Analysis'}
               </button>
               {isMotifPaused && (
                 <span className="motif-paused-indicator" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
@@ -233,57 +318,24 @@ function RegionMapPage(): JSX.Element {
 
         <div className="region-map-main-content">
           <div className="region-map-timeline-section">
-            <div className="region-timeline">
-              <div className="timeline-header">
-                <div className="timeline-scale">
-                  {Array.from({ length: Math.ceil(totalDuration / 10) + 1 }, (_, i) => i * 10).map((time) => (
-                    <div key={time} className="timeline-marker">
-                      <span className="timeline-label">{time}s</span>
-                    </div>
-                  ))}
-                </div>
-                {/* Fill markers at boundaries */}
-                {fills.length > 0 && (
-                  <div className="fill-markers-container">
-                    {fills.map((fill) => {
-                      const positionPercent = (fill.time / totalDuration) * 100;
-                      return (
-                        <div
-                          key={fill.id}
-                          className="fill-marker"
-                          style={{ left: `${positionPercent}%` }}
-                          title={`Fill at ${fill.time.toFixed(1)}s\nStems: ${fill.stemRoles.join(', ')}\nConfidence: ${(fill.confidence * 100).toFixed(0)}%`}
-                        >
-                          ⚡
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+            {/* 5-Layer Region Map View */}
+            {loadingLanes ? (
+              <div className="loading-state">
+                <p>Loading call/response lanes...</p>
               </div>
-
-              <div className="region-blocks-container">
-                {regions.map((region) => {
-                  // Get subregions for this region
-                  const subregions = subregionsByRegionId[region.id] || null;
-                  
-                  return (
-                    <RegionBlock
-                      key={region.id}
-                      region={region}
-                      totalDuration={totalDuration}
-                      motifs={motifs}
-                      motifGroups={motifGroups}
-                      highlightedGroupId={highlightedGroupId}
-                      onMotifHover={setHighlightedGroupId}
-                      subregions={subregions}
-                      bpm={120} // TODO: Get BPM from context or reference bundle
-                      showMotifDots={false} // Use DNA lanes instead of old dot overlay
-                    />
-                  );
-                })}
+            ) : lanesError ? (
+              <div className="error-state">
+                <p>Error loading lanes: {lanesError.message}</p>
               </div>
-            </div>
+            ) : (
+              <FiveLayerRegionMap
+                regions={regions}
+                lanes={callResponseLanesData?.lanes ?? []}
+                bpm={130} // TODO: Get BPM from context or reference bundle
+                totalDuration={totalDuration}
+                referenceId={referenceId}
+              />
+            )}
 
             <div className="region-list">
               <h3>Region Details</h3>
@@ -311,12 +363,14 @@ function RegionMapPage(): JSX.Element {
               regions={regions}
               onGroupClick={setHighlightedGroupId}
               highlightedGroupId={highlightedGroupId}
+              loading={loadingMotifs}
             />
             <CallResponsePanel
               pairs={callResponsePairs}
               regions={regions}
               onPairClick={handlePairClick}
               highlightedPairId={highlightedPairId}
+              loading={loadingCallResponse}
             />
           </div>
         </div>

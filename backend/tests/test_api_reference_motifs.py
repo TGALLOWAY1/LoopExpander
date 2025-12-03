@@ -18,6 +18,7 @@ from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import detect_motifs
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
+from analysis.motif_detector.config import DEFAULT_MOTIF_SENSITIVITY
 
 
 def create_synthetic_audio_file(
@@ -268,4 +269,156 @@ async def test_get_fills_not_found():
         await routes_reference.get_fills("nonexistent_id")
     
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_motif_sensitivity_endpoint(test_reference_id):
+    """Test GET /reference/{id}/motif-sensitivity endpoint returns defaults."""
+    from api import routes_reference
+    
+    result = await routes_reference.get_motif_sensitivity(test_reference_id)
+    
+    assert "referenceId" in result
+    assert result["referenceId"] == test_reference_id
+    assert "motifSensitivityConfig" in result
+    
+    config = result["motifSensitivityConfig"]
+    assert "drums" in config
+    assert "bass" in config
+    assert "vocals" in config
+    assert "instruments" in config
+    
+    # Should return default values
+    assert config["drums"] == DEFAULT_MOTIF_SENSITIVITY["drums"]
+    assert config["bass"] == DEFAULT_MOTIF_SENSITIVITY["bass"]
+    assert config["vocals"] == DEFAULT_MOTIF_SENSITIVITY["vocals"]
+    assert config["instruments"] == DEFAULT_MOTIF_SENSITIVITY["instruments"]
+
+
+@pytest.mark.asyncio
+async def test_patch_motif_sensitivity_updates_only_provided_keys(test_reference_id):
+    """Test PATCH /reference/{id}/motif-sensitivity updates only provided keys."""
+    from api import routes_reference
+    from api.routes_reference import MotifSensitivityUpdate
+    
+    # Get initial config
+    initial_result = await routes_reference.get_motif_sensitivity(test_reference_id)
+    initial_config = initial_result["motifSensitivityConfig"]
+    
+    # Update only drums
+    update = MotifSensitivityUpdate(drums=0.7)
+    result = await routes_reference.update_motif_sensitivity(test_reference_id, update)
+    
+    assert "referenceId" in result
+    assert result["referenceId"] == test_reference_id
+    assert "motifSensitivityConfig" in result
+    
+    updated_config = result["motifSensitivityConfig"]
+    
+    # Drums should be updated
+    assert updated_config["drums"] == 0.7
+    
+    # Other values should remain unchanged
+    assert updated_config["bass"] == initial_config["bass"]
+    assert updated_config["vocals"] == initial_config["vocals"]
+    assert updated_config["instruments"] == initial_config["instruments"]
+    
+    # Verify it's persisted in the bundle
+    from models.store import REFERENCE_BUNDLES
+    bundle = REFERENCE_BUNDLES[test_reference_id]
+    assert bundle.motif_sensitivity_config["drums"] == 0.7
+
+
+@pytest.mark.asyncio
+async def test_patch_motif_sensitivity_validates_range():
+    """Test PATCH /reference/{id}/motif-sensitivity validates values are in [0, 1]."""
+    from api import routes_reference
+    from api.routes_reference import MotifSensitivityUpdate
+    from fastapi import HTTPException
+    
+    # Test value too high
+    update_high = MotifSensitivityUpdate(drums=1.5)
+    with pytest.raises(HTTPException) as exc_info:
+        await routes_reference.update_motif_sensitivity("test_ref_invalid", update_high)
+    # Pydantic validation should catch this before our endpoint code
+    
+    # Test value too low
+    update_low = MotifSensitivityUpdate(drums=-0.1)
+    with pytest.raises(HTTPException) as exc_info:
+        await routes_reference.update_motif_sensitivity("test_ref_invalid", update_low)
+    # Pydantic validation should catch this before our endpoint code
+
+
+@pytest.mark.asyncio
+async def test_patch_motif_sensitivity_not_found():
+    """Test PATCH /reference/{id}/motif-sensitivity with non-existent reference."""
+    from api import routes_reference
+    from api.routes_reference import MotifSensitivityUpdate
+    from fastapi import HTTPException
+    
+    update = MotifSensitivityUpdate(drums=0.5)
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await routes_reference.update_motif_sensitivity("nonexistent_id", update)
+    
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_motifs_endpoint(test_reference_id):
+    """Test POST /reference/{id}/reanalyze-motifs endpoint."""
+    from api import routes_reference
+    
+    # Update sensitivity config first
+    from api.routes_reference import MotifSensitivityUpdate
+    update = MotifSensitivityUpdate(drums=0.3, bass=0.8)
+    await routes_reference.update_motif_sensitivity(test_reference_id, update)
+    
+    # Re-analyze motifs
+    result = await routes_reference.reanalyze_motifs(test_reference_id)
+    
+    assert "referenceId" in result
+    assert result["referenceId"] == test_reference_id
+    assert "motifInstanceCount" in result
+    assert "motifGroupCount" in result
+    assert "status" in result
+    assert result["status"] == "ok"
+    
+    # Verify motifs were re-detected
+    assert result["motifInstanceCount"] >= 0
+    assert result["motifGroupCount"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_motifs_not_found():
+    """Test POST /reference/{id}/reanalyze-motifs with non-existent reference."""
+    from api import routes_reference
+    from fastapi import HTTPException
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await routes_reference.reanalyze_motifs("nonexistent_id")
+    
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_motifs_no_regions():
+    """Test POST /reference/{id}/reanalyze-motifs fails when regions not detected."""
+    from api import routes_reference
+    from fastapi import HTTPException
+    import uuid
+    
+    # Create a bundle without regions
+    reference_id = f"test_ref_{uuid.uuid4().hex[:8]}"
+    bundle = create_test_bundle(duration=60.0, bpm=120.0)
+    REFERENCE_BUNDLES[reference_id] = bundle
+    
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            await routes_reference.reanalyze_motifs(reference_id)
+        
+        assert exc_info.value.status_code == 404
+        assert "regions" in exc_info.value.detail.lower()
+    finally:
+        REFERENCE_BUNDLES.pop(reference_id, None)
 

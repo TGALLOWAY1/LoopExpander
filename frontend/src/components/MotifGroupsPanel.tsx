@@ -11,6 +11,7 @@ export type MotifGroupsPanelProps = {
   regions: Region[];
   onGroupClick?: (groupId: string) => void;
   highlightedGroupId?: string | null;
+  loading?: boolean;
 };
 
 /**
@@ -27,7 +28,8 @@ export function MotifGroupsPanel({
   instances,
   regions,
   onGroupClick,
-  highlightedGroupId
+  highlightedGroupId,
+  loading = false
 }: MotifGroupsPanelProps): JSX.Element {
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
 
@@ -50,12 +52,15 @@ export function MotifGroupsPanel({
     }));
   }, [groups, instanceMap]);
 
-  if (groups.length === 0) {
+  if (!loading && groups.length === 0) {
     return (
       <div className="motif-groups-panel">
         <h3>Motif Groups</h3>
         <div className="motif-groups-empty">
-          <p>No motif groups detected.</p>
+          <p>No motif groups were detected for this reference.</p>
+          <p className="motif-groups-empty-hint">
+            Try lowering motif sensitivity for the relevant stem lanes and re-running analysis.
+          </p>
         </div>
       </div>
     );

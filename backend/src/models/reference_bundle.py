@@ -1,7 +1,10 @@
 """Reference bundle model for holding reference track stems and metadata."""
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 
 from stem_ingest.audio_file import AudioFile
+
+if TYPE_CHECKING:
+    from analysis.motif_detector.config import MotifSensitivityConfig
 
 
 class ReferenceBundle:
@@ -15,7 +18,8 @@ class ReferenceBundle:
         instruments: AudioFile,
         full_mix: AudioFile,
         bpm: float,
-        key: Optional[str] = None
+        key: Optional[str] = None,
+        motif_sensitivity_config: Optional['MotifSensitivityConfig'] = None
     ):
         """
         Initialize a ReferenceBundle.
@@ -28,7 +32,11 @@ class ReferenceBundle:
             full_mix: Full mix audio file
             bpm: Beats per minute
             key: Optional musical key (e.g., "C major", "A minor")
+            motif_sensitivity_config: Optional per-stem motif sensitivity configuration
         """
+        # Import here to avoid circular dependency
+        from analysis.motif_detector.config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
+        
         self.drums = drums
         self.bass = bass
         self.vocals = vocals
@@ -36,6 +44,11 @@ class ReferenceBundle:
         self.full_mix = full_mix
         self.bpm = bpm
         self.key = key
+        # Use a copy of defaults to avoid shared state
+        self.motif_sensitivity_config: MotifSensitivityConfig = (
+            motif_sensitivity_config.copy() if motif_sensitivity_config 
+            else DEFAULT_MOTIF_SENSITIVITY.copy()
+        )
     
     def validate_lengths(self, tolerance: float = 0.05) -> None:
         """

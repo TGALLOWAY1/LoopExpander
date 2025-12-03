@@ -5,8 +5,9 @@ import uuid
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Body
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from models.store import (
     REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
@@ -19,7 +20,15 @@ from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import (
     detect_motifs, MotifInstance, _cluster_motifs, _align_motifs_with_regions
 )
+from analysis.motif_detector.config import (
+    MotifSensitivityConfig,
+    DEFAULT_MOTIF_SENSITIVITY,
+    normalize_sensitivity_config,
+    clamp_sensitivity
+)
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+from analysis.call_response_detector.lanes_service import build_call_response_lanes
+from analysis.call_response_detector.lanes_models import CallResponseByStemResponse
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
 from analysis.subregions.models import RegionSubRegionsDTO
@@ -32,7 +41,8 @@ from config import (
     DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
     DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
     DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
-    DEFAULT_FILL_MIN_TRANSIENT_DENSITY
+    DEFAULT_FILL_MIN_TRANSIENT_DENSITY,
+    USE_FULL_MIX_FOR_LANE_VIEW
 )
 from utils.logger import get_logger
 
@@ -234,9 +244,19 @@ async def analyze_reference(
         REFERENCE_REGIONS[reference_id] = regions
         logger.info(f"Detected {len(regions)} regions for reference {reference_id}")
         
-        # Detect motifs
-        logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity}")
-        instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+        # Detect motifs using stored sensitivity config
+        # The query parameter is kept for backward compatibility but we prefer stored config
+        # If query param differs from default, it overrides stored config
+        # NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+        # Each motif instance is explicitly tagged with its stem_role for per-stem lane visualization.
+        if motif_sensitivity != DEFAULT_MOTIF_SENSITIVITY:
+            # Query parameter provided and differs from default, use it for all stems
+            logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity} (from query param, overriding stored config)")
+            instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity, exclude_full_mix=True)
+        else:
+            # Use stored per-stem sensitivity config
+            logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
+            instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config, exclude_full_mix=True)
         
         # Store raw instances (before clustering) for re-clustering with different sensitivity
         # Create deep copies to avoid modifying the clustered instances
@@ -260,12 +280,14 @@ async def analyze_reference(
         logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
         
         # Detect call-response relationships
+        # The Region Map's 5-layer view is stem-centric; we intentionally ignore full-mix motifs here.
         logger.info(f"Detecting call-response relationships for reference {reference_id}")
         call_response_config = CallResponseConfig(
             min_offset_bars=DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
             max_offset_bars=DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
             min_similarity=DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
-            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
+            use_full_mix=False  # Stem-only mode for 5-layer Region Map view
         )
         call_response_pairs = detect_call_response(instances, regions, bundle.bpm, config=call_response_config)
         
@@ -457,6 +479,180 @@ async def get_motifs(
     }
 
 
+class MotifSensitivityUpdate(BaseModel):
+    """Update model for motif sensitivity configuration."""
+    drums: Optional[float] = Field(None, ge=0.0, le=1.0, description="Drums sensitivity (0.0 = strict, 1.0 = loose)")
+    bass: Optional[float] = Field(None, ge=0.0, le=1.0, description="Bass sensitivity (0.0 = strict, 1.0 = loose)")
+    vocals: Optional[float] = Field(None, ge=0.0, le=1.0, description="Vocals sensitivity (0.0 = strict, 1.0 = loose)")
+    instruments: Optional[float] = Field(None, ge=0.0, le=1.0, description="Instruments sensitivity (0.0 = strict, 1.0 = loose)")
+
+
+@router.get("/{reference_id}/motif-sensitivity")
+async def get_motif_sensitivity(reference_id: str):
+    """
+    Get motif sensitivity configuration for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with motif sensitivity configuration
+    """
+    logger.info(f"Getting motif sensitivity for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    return {
+        "referenceId": reference_id,
+        "motifSensitivityConfig": bundle.motif_sensitivity_config
+    }
+
+
+@router.patch("/{reference_id}/motif-sensitivity")
+async def update_motif_sensitivity(
+    reference_id: str,
+    update: MotifSensitivityUpdate = Body(...)
+):
+    """
+    Update motif sensitivity configuration for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+        update: Partial update with sensitivity values (only provided keys are updated)
+    
+    Returns:
+        JSON with updated motif sensitivity configuration
+    """
+    logger.info(f"Updating motif sensitivity for reference_id: {reference_id}, update={update}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Validate and merge provided values
+    update_dict = update.model_dump(exclude_unset=True)
+    
+    # Clamp values to safe range [0.05, 0.95] even if they're in valid [0.0, 1.0] range
+    # This prevents extreme values that could lead to no motifs being detected
+    clamped_dict = {}
+    for key, value in update_dict.items():
+        if value is not None:
+            # Validate value is in range [0.0, 1.0] (Pydantic Field already does this, but double-check)
+            if value < 0.0 or value > 1.0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid sensitivity value for {key}: {value}. Must be between 0.0 and 1.0"
+                )
+            # Clamp to safe range [0.05, 0.95]
+            clamped_value = clamp_sensitivity(value)
+            if clamped_value != value:
+                logger.info(
+                    f"[MotifSensitivity] Clamped {key} sensitivity from {value} to {clamped_value} "
+                    "(extreme values can prevent motif detection)"
+                )
+            clamped_dict[key] = clamped_value
+    
+    # Merge provided keys into existing config
+    bundle.motif_sensitivity_config.update(clamped_dict)
+    
+    # Normalize the entire config to ensure all values are in safe range
+    bundle.motif_sensitivity_config = normalize_sensitivity_config(bundle.motif_sensitivity_config)
+    
+    logger.info(f"Updated motif sensitivity config for {reference_id}: {bundle.motif_sensitivity_config}")
+    
+    return {
+        "referenceId": reference_id,
+        "motifSensitivityConfig": bundle.motif_sensitivity_config
+    }
+
+
+@router.post("/{reference_id}/reanalyze-motifs")
+async def reanalyze_motifs(reference_id: str):
+    """
+    Re-run motif detection for a reference bundle using stored sensitivity configuration.
+    
+    This endpoint re-detects motifs using the current motif_sensitivity_config stored
+    on the reference bundle. Regions must already be detected (via /analyze).
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with analysis status and motif counts
+    """
+    logger.info(f"Re-analyzing motifs for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Check if regions have been detected
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    
+    try:
+        # Detect motifs using stored sensitivity config
+        logger.info(f"Re-detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
+        # NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+        instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config, exclude_full_mix=True)
+        
+        # Store raw instances (before clustering) for re-clustering with different sensitivity
+        raw_instances = []
+        for inst in instances:
+            raw_inst = MotifInstance(
+                id=inst.id,
+                stem_role=inst.stem_role,
+                start_time=inst.start_time,
+                end_time=inst.end_time,
+                features=inst.features.copy(),  # Copy numpy array
+                group_id=None,  # Reset clustering
+                is_variation=False,  # Reset variation flag
+                region_ids=inst.region_ids.copy()  # Keep region alignment
+            )
+            raw_instances.append(raw_inst)
+        REFERENCE_MOTIF_INSTANCES_RAW[reference_id] = raw_instances
+        
+        # Store motifs
+        REFERENCE_MOTIFS[reference_id] = (instances, groups)
+        logger.info(f"Re-detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
+        
+        return {
+            "referenceId": reference_id,
+            "motifInstanceCount": len(instances),
+            "motifGroupCount": len(groups),
+            "status": "ok"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error re-analyzing motifs for reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to re-analyze motifs: {str(e)}"
+        )
+
+
 @router.get("/{reference_id}/call-response")
 async def get_call_response(reference_id: str):
     """
@@ -509,6 +705,113 @@ async def get_call_response(reference_id: str):
         "pairs": pairs_dict,
         "count": len(pairs_dict)
     }
+
+
+@router.get("/{reference_id}/call-response-by-stem", response_model=CallResponseByStemResponse)
+async def get_call_response_by_stem(reference_id: str):
+    """
+    Get call-response patterns organized by stem lanes.
+    
+    This endpoint returns call/response events organized per stem category,
+    excluding full-mix motifs. Events are converted to bar-based coordinates
+    for timeline visualization.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        CallResponseByStemResponse with lanes organized by stem
+    """
+    logger.info(f"Getting call-response by stem for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Check if regions have been detected
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    
+    # Check if call-response pairs have been detected
+    if reference_id not in REFERENCE_CALL_RESPONSE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Call-response pairs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    call_response_pairs = REFERENCE_CALL_RESPONSE[reference_id]
+    
+    # NOTE: The Region Map stem lanes are intended to be per-stem only; full-mix motifs are ignored here by design.
+    # Filter out any pairs involving full_mix unless explicitly enabled
+    if not USE_FULL_MIX_FOR_LANE_VIEW:
+        stem_only_pairs = [
+            pair for pair in call_response_pairs
+            if pair.from_stem_role != "full_mix" and pair.to_stem_role != "full_mix"
+        ]
+        filtered_count = len(call_response_pairs) - len(stem_only_pairs)
+        if filtered_count > 0:
+            logger.info(
+                f"[CallResponseLanes] Filtered out {filtered_count} full-mix pairs (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+            )
+        call_response_pairs = stem_only_pairs
+    else:
+        logger.warning(
+            "[CallResponseLanes] USE_FULL_MIX_FOR_LANE_VIEW=True - full-mix motifs will be included (not recommended for stem lanes)"
+        )
+    
+    # Get motif instances if available (for getting end times)
+    # Filter to only per-stem motifs (exclude full_mix)
+    motif_instances = None
+    if reference_id in REFERENCE_MOTIF_INSTANCES_RAW:
+        raw_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+        if not USE_FULL_MIX_FOR_LANE_VIEW:
+            # Filter out full_mix motif instances
+            stem_only_instances = [
+                inst for inst in raw_instances
+                if inst.stem_role != "full_mix"
+            ]
+            filtered_motif_count = len(raw_instances) - len(stem_only_instances)
+            if filtered_motif_count > 0:
+                logger.info(
+                    f"[CallResponseLanes] Filtered out {filtered_motif_count} full-mix motif instances (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+                )
+            motif_instances = stem_only_instances
+        else:
+            motif_instances = raw_instances
+    
+    # Log summary of per-stem motifs being used
+    per_stem_motif_count = len(motif_instances) if motif_instances else 0
+    logger.info(
+        f"[CallResponseLanes] Using {per_stem_motif_count} per-stem motifs; full-mix motifs disabled (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+    )
+    
+    # Build lanes
+    try:
+        lanes_response = build_call_response_lanes(
+            reference_id=reference_id,
+            regions=regions,
+            call_response_pairs=call_response_pairs,
+            bpm=bundle.bpm,
+            motif_instances=motif_instances
+        )
+        
+        return lanes_response
+    except Exception as e:
+        logger.error(f"Error building call-response lanes for reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to build call-response lanes: {str(e)}"
+        )
 
 
 @router.get("/{reference_id}/fills")

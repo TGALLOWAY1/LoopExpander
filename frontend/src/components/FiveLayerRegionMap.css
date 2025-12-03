@@ -1,0 +1,280 @@
+/**
+ * Styles for FiveLayerRegionMap component.
+ */
+
+.five-layer-region-map {
+  width: 100%;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+/* Focus control toolbar */
+.five-layer-focus-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.five-layer-focus-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  white-space: nowrap;
+}
+
+.five-layer-focus-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.five-layer-focus-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  outline: none;
+}
+
+.five-layer-focus-button:hover {
+  background-color: #f0f0f0;
+  border-color: #999;
+}
+
+.five-layer-focus-button:focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+.five-layer-focus-button--active {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.five-layer-focus-button--active:hover {
+  background-color: #0056b3;
+  border-color: #0056b3;
+}
+
+.five-layer-empty-state {
+  padding: 2rem;
+  text-align: center;
+  color: #666;
+}
+
+/* Timeline header */
+.five-layer-timeline-header {
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.five-layer-timeline-scale {
+  position: relative;
+  height: 30px;
+}
+
+.five-layer-timeline-marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  border-left: 1px solid #ccc;
+  height: 100%;
+  padding-left: 4px;
+}
+
+.five-layer-timeline-label {
+  font-size: 0.75rem;
+  color: #666;
+  white-space: nowrap;
+  position: absolute;
+  top: 0;
+  left: 4px;
+}
+
+/* Row layout (label + content) */
+.five-layer-row {
+  display: flex;
+  margin-bottom: 0.5rem;
+  min-height: 60px;
+  align-items: stretch;
+}
+
+.five-layer-label {
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  padding-right: 1rem;
+  border-right: 1px solid #e0e0e0;
+  position: relative;
+  z-index: 1;
+  background-color: white;
+}
+
+.five-layer-content {
+  flex: 1;
+  position: relative;
+  min-height: 60px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  padding: 4px;
+  z-index: 0;
+}
+
+/* Region lane */
+.five-layer-region-lane {
+  background-color: #f5f5f5;
+}
+
+.five-layer-region-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border: 2px solid;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.five-layer-region-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.five-layer-region-block-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stem lanes */
+.five-layer-stem-lane {
+  background-color: #fafafa;
+  transition: opacity 0.3s ease;
+}
+
+.five-layer-stem-lane--focused {
+  opacity: 1;
+}
+
+.five-layer-stem-lane--dimmed {
+  opacity: 0.2;
+}
+
+.five-layer-row--focused {
+  /* Full opacity for focused row */
+}
+
+.five-layer-row--dimmed {
+  opacity: 0.2;
+  transition: opacity 0.3s ease;
+}
+
+.five-layer-label--focused {
+  /* Normal appearance for focused label */
+}
+
+.five-layer-label--dimmed {
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+
+.five-layer-event-block {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  border: 2px solid;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.five-layer-event-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  opacity: 1 !important;
+}
+
+.five-layer-event-block--highlighted {
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.8), 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 15;
+  opacity: 1 !important;
+}
+
+.five-layer-event-call {
+  /* Solid fill for calls */
+}
+
+.five-layer-event-response {
+  /* Outlined for responses */
+  background-color: transparent !important;
+}
+
+.five-layer-event-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Empty state for stem lanes */
+.stem-lane-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 40px;
+  color: #999;
+  font-size: 0.85rem;
+  font-style: italic;
+  padding: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .five-layer-label {
+    width: 80px;
+    font-size: 0.8rem;
+  }
+  
+  .five-layer-region-block-label {
+    font-size: 0.75rem;
+  }
+  
+  .five-layer-event-label {
+    font-size: 0.65rem;
+  }
+}
+
