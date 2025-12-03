@@ -1,6 +1,7 @@
 """Pydantic models for call/response lane visualization."""
 from pydantic import BaseModel
-from typing import Literal, List, Optional
+from typing import List, Optional
+from typing_extensions import Literal
 
 StemCategory = Literal["drums", "bass", "instruments", "vocals"]
 
