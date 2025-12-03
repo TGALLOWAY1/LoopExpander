@@ -32,13 +32,16 @@ logger = logging.getLogger(__name__)
 
 # Sensitivity grid to sweep through
 SENSITIVITY_GRID: List[MotifSensitivityConfig] = [
-    # Uniform settings
-    {"drums": 0.2, "bass": 0.2, "vocals": 0.2, "instruments": 0.2},
-    {"drums": 0.4, "bass": 0.4, "vocals": 0.4, "instruments": 0.4},
-    {"drums": 0.6, "bass": 0.6, "vocals": 0.6, "instruments": 0.6},
-    {"drums": 0.8, "bass": 0.8, "vocals": 0.8, "instruments": 0.8},
-    # Example "drums stricter, bass looser"
-    {"drums": 0.3, "bass": 0.6, "vocals": 0.5, "instruments": 0.5},
+    # Very strict across the board
+    {"drums": 0.10, "bass": 0.10, "vocals": 0.10, "instruments": 0.10},
+    # Slightly looser, still strict
+    {"drums": 0.15, "bass": 0.15, "vocals": 0.15, "instruments": 0.15},
+    # Moderate
+    {"drums": 0.20, "bass": 0.20, "vocals": 0.20, "instruments": 0.20},
+    # Drums a bit looser, others still tight
+    {"drums": 0.25, "bass": 0.15, "vocals": 0.20, "instruments": 0.20},
+    # Vocals/instruments looser, rhythm stricter
+    {"drums": 0.15, "bass": 0.15, "vocals": 0.25, "instruments": 0.25},
 ]
 
 
