@@ -76,6 +76,23 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Color palette for lanes (rotates through these colors)
+  const LANE_COLORS = [
+    '#FF6B6B', // Red
+    '#4ECDC4', // Teal
+    '#FFE66D', // Yellow
+    '#95E1D3', // Mint
+    '#F38181', // Coral
+    '#AA96DA', // Purple
+    '#FCBAD3', // Pink
+    '#A8E6CF', // Green
+  ];
+
+  // Helper to generate unique lane IDs
+  const createLaneId = useCallback(() => {
+    return `lane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
   // Update global annotations when local region annotations change
   const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
     if (!annotations) return;
@@ -162,22 +179,131 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     }
   }, [annotations, referenceId, debouncedSave]);
 
-  // Add a new lane
-  const handleAddLane = () => {
-    if (!regionId) return;
+  // ============================================================================
+  // Lane CRUD Helper Functions
+  // ============================================================================
 
+  /**
+   * Adds a new lane to localRegionAnnotations.
+   * Creates a lane with generated ID, default name, rotating color, and proper order.
+   * Automatically syncs to global annotations via useEffect.
+   */
+  const addLane = useCallback(() => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    const lanes = localRegionAnnotations.lanes || [];
+    const maxOrder = lanes.length > 0 
+      ? Math.max(...lanes.map(l => l.order ?? 0))
+      : -1;
+    const nextOrder = maxOrder + 1;
+    
+    // Rotate through color palette
+    const colorIndex = lanes.length % LANE_COLORS.length;
+    const color = LANE_COLORS[colorIndex];
+    
     const newLane: AnnotationLane = {
-      id: `lane_${Date.now()}`,
-      name: 'New Lane',
-      color: '#808080',
+      id: createLaneId(),
+      name: `Lane ${lanes.length + 1}`,
+      color,
       collapsed: false,
-      order: localRegionAnnotations.lanes.length,
+      order: nextOrder,
     };
 
-    setLocalRegionAnnotations(prev => ({
-      ...prev,
-      lanes: [...prev.lanes, newLane],
-    }));
+    setLocalRegionAnnotations(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        lanes: [...(prev.lanes || []), newLane],
+      };
+    });
+  }, [localRegionAnnotations, regionId, createLaneId]);
+
+  /**
+   * Updates a lane by ID with a partial patch of properties.
+   * Finds the lane and applies the patch, then syncs to global annotations via useEffect.
+   */
+  const updateLane = useCallback((id: string, patch: Partial<AnnotationLane>) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      return {
+        ...prev,
+        lanes: prev.lanes.map(lane => 
+          lane.id === id ? { ...lane, ...patch } : lane
+        ),
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  /**
+   * Deletes a lane by ID and optionally removes all blocks that reference it.
+   * Syncs to global annotations via useEffect.
+   */
+  const deleteLane = useCallback((id: string) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      // Remove the lane
+      const updatedLanes = prev.lanes.filter(lane => lane.id !== id);
+      
+      // Optionally remove blocks that reference this lane
+      const updatedBlocks = prev.blocks?.filter(block => block.laneId !== id) || [];
+      
+      return {
+        ...prev,
+        lanes: updatedLanes,
+        blocks: updatedBlocks,
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  /**
+   * Reorders lanes based on an ordered list of lane IDs.
+   * Updates each lane's order property to match the new position.
+   * Syncs to global annotations via useEffect.
+   */
+  const reorderLanes = useCallback((orderedIds: string[]) => {
+    if (!localRegionAnnotations || !orderedIds || orderedIds.length === 0) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      // Create a map of lane by ID for quick lookup
+      const laneMap = new Map(prev.lanes.map(lane => [lane.id, lane]));
+      
+      // Reorder lanes based on orderedIds and update their order values
+      const reorderedLanes = orderedIds
+        .map((id, index) => {
+          const lane = laneMap.get(id);
+          if (!lane) return null;
+          return { ...lane, order: index };
+        })
+        .filter((lane): lane is AnnotationLane => lane !== null);
+      
+      // Keep any lanes that weren't in orderedIds (shouldn't happen, but safe)
+      const existingIds = new Set(orderedIds);
+      const remainingLanes = prev.lanes
+        .filter(lane => !existingIds.has(lane.id))
+        .map((lane, index) => ({ ...lane, order: reorderedLanes.length + index }));
+      
+      return {
+        ...prev,
+        lanes: [...reorderedLanes, ...remainingLanes],
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  // ============================================================================
+  // Legacy Handlers (to be replaced with helpers above in future UI updates)
+  // ============================================================================
+
+  // Add a new lane
+  const handleAddLane = () => {
+    addLane();
   };
 
   // Toggle lane collapse
