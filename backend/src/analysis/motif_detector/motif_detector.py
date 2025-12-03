@@ -479,7 +479,6 @@ def detect_motifs(
             logger.info(f"[Motifs] No instances found for {stem_role} stem (skipped clustering)")
     
     # Debug: Log summary statistics by stem_role
-    from collections import Counter
     stem_role_counts = Counter([inst.stem_role for inst in all_instances])
     
     logger.info(
