@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
 import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
+import VisualComposerPage from './pages/VisualComposerPage';
 import { VISUAL_COMPOSER_ENABLED } from './config';
 import './App.css';
 
@@ -54,10 +55,7 @@ function App(): JSX.Element {
           </>
         )}
         {view === 'visualComposer' && (
-          <div style={{ padding: 40 }}>
-            <h2>Visual Composer (placeholder)</h2>
-            <button onClick={() => setView('regionMap')}>Back</button>
-          </div>
+          <VisualComposerPage onBack={() => setView('regionMap')} />
         )}
       </main>
     </div>
