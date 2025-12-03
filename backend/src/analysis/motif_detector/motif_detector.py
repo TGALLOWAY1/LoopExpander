@@ -272,10 +272,10 @@ def _cluster_motifs(
         logger.warning(f"[Motifs] Stem={stem_role or 'unknown'}: No distances, using fallback eps={eps:.4f}")
     else:
         # Define percentile window for eps range
-        # q_low = stricter end (25th percentile)
-        # q_high = looser end (60th percentile)
-        q_low = np.percentile(distances, 25.0)
-        q_high = np.percentile(distances, 60.0)
+        # q_low = stricter end (15th percentile)
+        # q_high = looser end (45th percentile)
+        q_low = np.percentile(distances, 15.0)
+        q_high = np.percentile(distances, 45.0)
         
         # Safety: if q_high <= q_low due to weird distribution, nudge
         if q_high <= q_low:
