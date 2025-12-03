@@ -7,8 +7,9 @@
  * 
  * All layers share a common time scale (bars) for vertical alignment.
  */
+import React, { useState } from 'react';
 import { Region } from '../api/reference';
-import { StemCallResponseLane } from '../types/callResponseLanes';
+import { StemCallResponseLane, StemCategory } from '../types/callResponseLanes';
 import './FiveLayerRegionMap.css';
 
 export type FiveLayerRegionMapProps = {
@@ -94,6 +95,10 @@ export function FiveLayerRegionMap({
   bpm = 130,
   totalDuration: providedTotalDuration,
 }: FiveLayerRegionMapProps): JSX.Element {
+  // State for focused stem mode
+  const [focusedStem, setFocusedStem] = useState<StemCategory | 'all'>('all');
+  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+
   // Compute total duration from regions if not provided
   const totalDuration = providedTotalDuration ?? (
     regions.length > 0
@@ -147,8 +152,36 @@ export function FiveLayerRegionMap({
     );
   }
 
+  // Stem options for the control UI
+  const stemOptions: Array<{ value: StemCategory | 'all'; label: string }> = [
+    { value: 'all', label: 'All' },
+    { value: 'drums', label: 'Drums' },
+    { value: 'bass', label: 'Bass' },
+    { value: 'instruments', label: 'Instruments' },
+    { value: 'vocals', label: 'Vocals' },
+  ];
+
   return (
     <div className="five-layer-region-map">
+      {/* Focus control toolbar */}
+      <div className="five-layer-focus-control">
+        <span className="five-layer-focus-label">Focus:</span>
+        <div className="five-layer-focus-buttons" role="group" aria-label="Focus on stem lane">
+          {stemOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`five-layer-focus-button ${focusedStem === option.value ? 'five-layer-focus-button--active' : ''}`}
+              onClick={() => setFocusedStem(option.value)}
+              aria-pressed={focusedStem === option.value}
+              aria-label={`Focus on ${option.label.toLowerCase()}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Timeline scale header */}
       <div className="five-layer-timeline-header">
         <div className="five-layer-timeline-scale">
@@ -201,31 +234,57 @@ export function FiveLayerRegionMap({
         const lane = laneMap.get(stem) || { stem, events: [] };
         const stemColor = getStemColor(stem);
         const stemDisplayName = getStemDisplayName(stem);
+        
+        // Determine if this lane should be focused, dimmed, or hidden
+        const isFocused = focusedStem === 'all' || focusedStem === stem;
+        const isDimmed = focusedStem !== 'all' && focusedStem !== stem;
+        
+        // Skip rendering if not focused and we're in focus mode (hide instead of dim)
+        // For now, we'll dim instead of hide for better UX
+        // if (focusedStem !== 'all' && focusedStem !== stem) {
+        //   return null;
+        // }
 
         return (
-          <div key={stem} className="five-layer-row">
-            <div className="five-layer-label">{stemDisplayName}</div>
-            <div className="five-layer-content five-layer-stem-lane">
+          <div 
+            key={stem} 
+            className={`five-layer-row ${isFocused ? 'five-layer-row--focused' : ''} ${isDimmed ? 'five-layer-row--dimmed' : ''}`}
+          >
+            <div className={`five-layer-label ${isFocused ? 'five-layer-label--focused' : ''} ${isDimmed ? 'five-layer-label--dimmed' : ''}`}>
+              {stemDisplayName}
+            </div>
+            <div className={`five-layer-content five-layer-stem-lane ${isFocused ? 'five-layer-stem-lane--focused' : ''} ${isDimmed ? 'five-layer-stem-lane--dimmed' : ''}`}>
               {lane.events.map((event) => {
                 const leftPercent = barToPercent(event.startBar);
                 const widthPercent = barWidthPercent(event.startBar, event.endBar);
                 
                 // Encode role: call = solid, response = outlined
                 const isCall = event.role === 'call';
-                const opacity = event.intensity != null ? Math.max(0.3, Math.min(1.0, event.intensity)) : (isCall ? 0.8 : 0.5);
+                const baseOpacity = event.intensity != null ? Math.max(0.3, Math.min(1.0, event.intensity)) : (isCall ? 0.8 : 0.5);
+                
+                // Apply focus/dim opacity
+                let finalOpacity = baseOpacity;
+                if (isDimmed) {
+                  finalOpacity = baseOpacity * 0.2; // Dim to 20% of original opacity
+                }
+                
+                // Check if this event should be highlighted (same groupId as hovered)
+                const isHighlighted = hoveredGroupId !== null && hoveredGroupId === event.groupId;
                 
                 return (
                   <div
                     key={event.id}
-                    className={`five-layer-event-block ${isCall ? 'five-layer-event-call' : 'five-layer-event-response'}`}
+                    className={`five-layer-event-block ${isCall ? 'five-layer-event-call' : 'five-layer-event-response'} ${isHighlighted ? 'five-layer-event-block--highlighted' : ''}`}
                     style={{
                       left: `${leftPercent}%`,
                       width: `${widthPercent}%`,
                       backgroundColor: isCall ? stemColor : 'transparent',
                       borderColor: stemColor,
-                      opacity,
+                      opacity: finalOpacity,
                     }}
-                    title={`${stemDisplayName} ${event.role}${event.label ? `: ${event.label}` : ''}\n${event.startBar.toFixed(1)} - ${event.endBar.toFixed(1)} bars${event.intensity != null ? `\nIntensity: ${(event.intensity * 100).toFixed(0)}%` : ''}`}
+                    onMouseEnter={() => setHoveredGroupId(event.groupId)}
+                    onMouseLeave={() => setHoveredGroupId(null)}
+                    title={`${stemDisplayName} ${event.role}${event.label ? `: ${event.label}` : ''}\n${event.startBar.toFixed(1)} - ${event.endBar.toFixed(1)} bars${event.intensity != null ? `\nIntensity: ${(event.intensity * 100).toFixed(0)}%` : ''}\nGroup: ${event.groupId}`}
                   >
                     {widthPercent > 2 && (
                       <div className="five-layer-event-label">

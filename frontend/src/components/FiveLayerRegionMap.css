@@ -10,6 +10,65 @@
   padding: 1rem;
 }
 
+/* Focus control toolbar */
+.five-layer-focus-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.five-layer-focus-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  white-space: nowrap;
+}
+
+.five-layer-focus-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.five-layer-focus-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  outline: none;
+}
+
+.five-layer-focus-button:hover {
+  background-color: #f0f0f0;
+  border-color: #999;
+}
+
+.five-layer-focus-button:focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+.five-layer-focus-button--active {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.five-layer-focus-button--active:hover {
+  background-color: #0056b3;
+  border-color: #0056b3;
+}
+
 .five-layer-empty-state {
   padding: 2rem;
   text-align: center;
@@ -113,6 +172,33 @@
 /* Stem lanes */
 .five-layer-stem-lane {
   background-color: #fafafa;
+  transition: opacity 0.3s ease;
+}
+
+.five-layer-stem-lane--focused {
+  opacity: 1;
+}
+
+.five-layer-stem-lane--dimmed {
+  opacity: 0.2;
+}
+
+.five-layer-row--focused {
+  /* Full opacity for focused row */
+}
+
+.five-layer-row--dimmed {
+  opacity: 0.2;
+  transition: opacity 0.3s ease;
+}
+
+.five-layer-label--focused {
+  /* Normal appearance for focused label */
+}
+
+.five-layer-label--dimmed {
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
 }
 
 .five-layer-event-block {
@@ -132,6 +218,12 @@
   transform: translateY(-2px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   z-index: 10;
+  opacity: 1 !important;
+}
+
+.five-layer-event-block--highlighted {
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.8), 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 15;
   opacity: 1 !important;
 }
 
