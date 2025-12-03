@@ -152,9 +152,79 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     isSaving,
   } = useVisualComposerAnnotations(referenceId || null);
 
-  const [currentRegionIndex, setCurrentRegionIndex] = useState(0);
-  const currentRegion = regions?.[currentRegionIndex];
+  // Build ordered region list from annotations (if available) or fallback to regions from context
+  // Annotations have displayOrder and bar ranges, so prefer that for ordering
+  const orderedRegions = useMemo(() => {
+    if (!vcAnnotations || !regions || regions.length === 0) {
+      return regions || [];
+    }
+    
+    // Create a map of region annotations by regionId
+    const annotationsByRegionId = new Map<string, VcRegionAnnotations>();
+    vcAnnotations.regions.forEach(regionAnn => {
+      annotationsByRegionId.set(regionAnn.regionId, regionAnn);
+    });
+    
+    // Build ordered list: use annotations displayOrder if available, otherwise use region order
+    const regionList = regions.map(region => {
+      const regionAnn = annotationsByRegionId.get(region.id);
+      return {
+        ...region,
+        startBar: regionAnn?.startBar ?? null,
+        endBar: regionAnn?.endBar ?? null,
+        displayOrder: regionAnn?.displayOrder ?? null,
+      };
+    });
+    
+    // Sort by displayOrder if available, otherwise keep original order
+    return regionList.sort((a, b) => {
+      if (a.displayOrder !== null && b.displayOrder !== null) {
+        return a.displayOrder - b.displayOrder;
+      }
+      if (a.displayOrder !== null) return -1;
+      if (b.displayOrder !== null) return 1;
+      return 0; // Keep original order if no displayOrder
+    });
+  }, [vcAnnotations, regions]);
+
+  // Initialize currentRegionIndex from URL params if available (for future router integration)
+  // For now, default to 0
+  const [currentRegionIndex, setCurrentRegionIndex] = useState(() => {
+    // TODO: If router params are added, read from URL here
+    // const params = useSearchParams(); // or useParams() if using React Router
+    // const regionIndexParam = params.get('regionIndex');
+    // return regionIndexParam ? parseInt(regionIndexParam, 10) : 0;
+    return 0;
+  });
+
+  // Ensure currentRegionIndex is valid
+  useEffect(() => {
+    if (orderedRegions.length > 0 && currentRegionIndex >= orderedRegions.length) {
+      setCurrentRegionIndex(0);
+    }
+  }, [orderedRegions.length, currentRegionIndex]);
+
+  const currentRegion = orderedRegions[currentRegionIndex];
   const regionId = currentRegion?.id;
+  
+  // Get bar range from annotations or calculate from region time
+  const currentRegionBarRange = useMemo(() => {
+    if (!currentRegion) return null;
+    
+    // Try to get from annotations first
+    const regionAnn = vcAnnotations?.regions.find(r => r.regionId === currentRegion.id);
+    if (regionAnn?.startBar !== null && regionAnn?.startBar !== undefined &&
+        regionAnn?.endBar !== null && regionAnn?.endBar !== undefined) {
+      return {
+        startBar: regionAnn.startBar,
+        endBar: regionAnn.endBar,
+      };
+    }
+    
+    // Fallback: calculate from region time (would need BPM, but for now return null)
+    // In a real implementation, we'd get BPM from the bundle
+    return null;
+  }, [currentRegion, vcAnnotations]);
 
   // Save status for UI feedback
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
@@ -500,11 +570,17 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   // Legacy Handlers (for bar grid/block functionality - to be used in future prompts)
   // ============================================================================
 
-  // Calculate bars for current region (simplified: assume 4/4 time, use duration)
+  // Calculate bars for current region
+  // Prefer bar range from annotations, otherwise estimate from duration
   const getRegionBars = (): number => {
-    const currentRegion = regions[currentRegionIndex];
     if (!currentRegion) return 0;
-    // Rough estimate: 1 bar = 2 seconds at 120 BPM
+    
+    // Use bar range from annotations if available
+    if (currentRegionBarRange && currentRegionBarRange.endBar) {
+      return Math.ceil(currentRegionBarRange.endBar);
+    }
+    
+    // Fallback: rough estimate (1 bar = 2 seconds at 120 BPM)
     // For more accuracy, we'd need BPM from the bundle
     return Math.ceil(currentRegion.duration / 2);
   };
@@ -682,21 +758,36 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     // The debounced save to backend is already handled by debouncedSave
   }, [regionId]);
 
-  // Navigation
-  const handlePrevRegion = () => {
+  // Navigation handlers
+  // Edits are preserved automatically because:
+  // 1. Edits are stored in localRegionAnnotations (current region's edits)
+  // 2. A useEffect syncs localRegionAnnotations to vcAnnotations (keyed by regionId)
+  // 3. When navigating, we change currentRegionIndex, which triggers a useEffect
+  //    that loads the new region's annotations from vcAnnotations into localRegionAnnotations
+  // 4. The previous region's edits remain in vcAnnotations (unsaved until user clicks Save)
+  // This means unsaved edits are preserved in React state across region navigation
+  const handlePrevRegion = useCallback(() => {
     if (currentRegionIndex > 0) {
+      // Current region's edits are already synced to vcAnnotations via useEffect
+      // Just change the index to show the previous region
       setCurrentRegionIndex(currentRegionIndex - 1);
+      // Clear selected block when navigating
+      setSelectedBlockId(null);
     }
-  };
+  }, [currentRegionIndex]);
 
-  const handleNextRegion = () => {
-    if (currentRegionIndex < regions.length - 1) {
+  const handleNextRegion = useCallback(() => {
+    if (currentRegionIndex < orderedRegions.length - 1) {
+      // Current region's edits are already synced to vcAnnotations via useEffect
+      // Just change the index to show the next region
       setCurrentRegionIndex(currentRegionIndex + 1);
+      // Clear selected block when navigating
+      setSelectedBlockId(null);
     }
-  };
+  }, [currentRegionIndex, orderedRegions.length]);
 
   // Validation
-  if (!referenceId || regions.length === 0) {
+  if (!referenceId || orderedRegions.length === 0) {
     return (
       <div className="visual-composer-page">
         <div className="visual-composer-empty">
@@ -727,14 +818,19 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           <div className="region-info">
             <h2>{currentRegion.name}</h2>
             <span className="region-type">{currentRegion.type}</span>
+            {currentRegionBarRange && (
+              <span className="region-bar-range">
+                Bars {currentRegionBarRange.startBar.toFixed(1)} - {currentRegionBarRange.endBar.toFixed(1)}
+              </span>
+            )}
             <span className="region-index">
-              Region {currentRegionIndex + 1} of {regions.length}
+              Region {currentRegionIndex + 1} of {orderedRegions.length}
             </span>
           </div>
           <button
             className="nav-button"
             onClick={handleNextRegion}
-            disabled={currentRegionIndex === regions.length - 1}
+            disabled={currentRegionIndex >= orderedRegions.length - 1}
           >
             Next →
           </button>
