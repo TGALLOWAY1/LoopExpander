@@ -117,7 +117,8 @@
   width: 120px;
   flex-shrink: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   font-weight: 600;
   font-size: 0.9rem;
   color: #333;
