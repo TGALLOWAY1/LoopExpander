@@ -277,7 +277,7 @@ export function FiveLayerRegionMap({
             <div className={`five-layer-content five-layer-stem-lane ${isFocused ? 'five-layer-stem-lane--focused' : ''} ${isDimmed ? 'five-layer-stem-lane--dimmed' : ''}`}>
               {lane.events.length === 0 && (
                 <div className="stem-lane-empty">
-                  No call/response detected for this stem.
+                  No call/response for {stemDisplayName}
                 </div>
               )}
               {lane.events.map((event) => {

@@ -350,6 +350,7 @@ function RegionMapPage(): JSX.Element {
               regions={regions}
               onPairClick={handlePairClick}
               highlightedPairId={highlightedPairId}
+              loading={loadingCallResponse}
             />
           </div>
         </div>

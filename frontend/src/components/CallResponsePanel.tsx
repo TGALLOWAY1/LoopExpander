@@ -10,6 +10,7 @@ export type CallResponsePanelProps = {
   regions: Region[];
   onPairClick?: (pair: CallResponsePair) => void;
   highlightedPairId?: string | null;
+  loading?: boolean;
 };
 
 /**
@@ -25,7 +26,8 @@ export function CallResponsePanel({
   pairs, 
   regions, 
   onPairClick,
-  highlightedPairId 
+  highlightedPairId,
+  loading = false
 }: CallResponsePanelProps): JSX.Element {
   // Group pairs by region
   const pairsByRegion = useMemo(() => {
@@ -51,12 +53,15 @@ export function CallResponsePanel({
     return map;
   }, [regions]);
 
-  if (pairs.length === 0) {
+  if (!loading && pairs.length === 0) {
     return (
       <div className="call-response-panel">
         <h3>Call & Response</h3>
         <div className="call-response-empty">
-          <p>No call-response pairs detected.</p>
+          <p>No call & response patterns were detected.</p>
+          <p className="call-response-empty-hint">
+            Motifs must be detected first; adjust motif sensitivity and re-run analysis.
+          </p>
         </div>
       </div>
     );

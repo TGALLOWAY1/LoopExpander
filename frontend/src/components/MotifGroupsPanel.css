@@ -25,6 +25,17 @@
   color: #666;
 }
 
+.motif-groups-empty p {
+  margin: 0.5rem 0;
+}
+
+.motif-groups-empty-hint {
+  font-size: 0.9rem;
+  color: #888;
+  font-style: italic;
+  margin-top: 0.75rem !important;
+}
+
 .motif-groups-content {
   display: flex;
   flex-direction: column;
