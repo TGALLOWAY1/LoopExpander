@@ -69,6 +69,27 @@ def summarize_pairs(pairs) -> Counter:
     return Counter([p.from_stem_role for p in pairs if hasattr(p, 'from_stem_role')])
 
 
+def compression(motifs_count: int, groups_count: int) -> float:
+    """
+    Compute compression ratio: motifs_per_stem / groups_per_stem.
+    
+    Large value → many motifs collapsed into fewer groups (good compression)
+    Value near 1.0 → each motif is its own group (over-segmentation)
+    
+    Args:
+        motifs_count: Number of motif instances
+        groups_count: Number of motif groups
+    
+    Returns:
+        Compression ratio (0.0 if no motifs, inf if motifs but no groups)
+    """
+    if motifs_count == 0:
+        return 0.0
+    if groups_count <= 0:
+        return float("inf")
+    return motifs_count / groups_count
+
+
 def run_sweep(reference_id: str):
     """
     Run motif + grouping + call/response analysis with different sensitivity configs.
@@ -118,6 +139,10 @@ def run_sweep(reference_id: str):
         "groups_bs",
         "groups_vx",
         "groups_in",
+        "comp_dr",
+        "comp_bs",
+        "comp_vx",
+        "comp_in",
         "pairs_dr",
         "pairs_bs",
         "pairs_vx",
@@ -162,6 +187,21 @@ def run_sweep(reference_id: str):
             groups_by_stem = summarize_groups(motif_groups)
             pairs_by_stem = summarize_pairs(pairs)
             
+            # Compute compression ratios per stem
+            m_dr = motifs_by_stem.get("drums", 0)
+            g_dr = groups_by_stem.get("drums", 0)
+            m_bs = motifs_by_stem.get("bass", 0)
+            g_bs = groups_by_stem.get("bass", 0)
+            m_vx = motifs_by_stem.get("vocals", 0)
+            g_vx = groups_by_stem.get("vocals", 0)
+            m_in = motifs_by_stem.get("instruments", 0)
+            g_in = groups_by_stem.get("instruments", 0)
+            
+            comp_dr = compression(m_dr, g_dr)
+            comp_bs = compression(m_bs, g_bs)
+            comp_vx = compression(m_vx, g_vx)
+            comp_in = compression(m_in, g_in)
+            
             # Print table row
             row = [
                 str(idx),
@@ -169,14 +209,18 @@ def run_sweep(reference_id: str):
                 f"{norm_cfg['bass']:.2f}",
                 f"{norm_cfg['vocals']:.2f}",
                 f"{norm_cfg['instruments']:.2f}",
-                str(motifs_by_stem.get("drums", 0)),
-                str(motifs_by_stem.get("bass", 0)),
-                str(motifs_by_stem.get("vocals", 0)),
-                str(motifs_by_stem.get("instruments", 0)),
-                str(groups_by_stem.get("drums", 0)),
-                str(groups_by_stem.get("bass", 0)),
-                str(groups_by_stem.get("vocals", 0)),
-                str(groups_by_stem.get("instruments", 0)),
+                str(m_dr),
+                str(m_bs),
+                str(m_vx),
+                str(m_in),
+                str(g_dr),
+                str(g_bs),
+                str(g_vx),
+                str(g_in),
+                f"{comp_dr:.2f}" if comp_dr != float("inf") else "inf",
+                f"{comp_bs:.2f}" if comp_bs != float("inf") else "inf",
+                f"{comp_vx:.2f}" if comp_vx != float("inf") else "inf",
+                f"{comp_in:.2f}" if comp_in != float("inf") else "inf",
                 str(pairs_by_stem.get("drums", 0)),
                 str(pairs_by_stem.get("bass", 0)),
                 str(pairs_by_stem.get("vocals", 0)),
@@ -205,6 +249,10 @@ def run_sweep(reference_id: str):
                 "ERROR",
                 "ERROR",
                 "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
             ]
             print("\t".join(row))
     
@@ -214,6 +262,11 @@ def run_sweep(reference_id: str):
     print("  drums/bass/vox/inst: Sensitivity values for each stem")
     print("  motifs_dr/bs/vx/in: Total motif instances per stem")
     print("  groups_dr/bs/vx/in: Motif groups per stem")
+    print("  comp_dr/bs/vx/in: Compression ratio (motifs/groups)")
+    print("    - Large value (e.g., 4.0) = good compression (many motifs → few groups)")
+    print("    - Near 1.0 (e.g., 1.02) = over-segmentation (each motif is its own group)")
+    print("    - 0.0 = no motifs detected")
+    print("    - inf = motifs but no groups")
     print("  pairs_dr/bs/vx/in: Call/response pairs per stem")
 
 
