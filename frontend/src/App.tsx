@@ -37,6 +37,15 @@ function App(): JSX.Element {
           >
             Region Map
           </button>
+          {VISUAL_COMPOSER_ENABLED && referenceId && regions.length > 0 && (
+            <button
+              className="dev-button"
+              style={{ margin: '12px', padding: '8px 12px' }}
+              onClick={() => setView('visualComposer')}
+            >
+              [Dev] Open Visual Composer
+            </button>
+          )}
         </nav>
       </header>
       <main>
@@ -44,14 +53,6 @@ function App(): JSX.Element {
         {view === 'regionMap' && (
           <>
             <RegionMapPage />
-            {VISUAL_COMPOSER_ENABLED && view === 'regionMap' && referenceId && (
-              <button
-                style={{ margin: '12px', padding: '8px 12px' }}
-                onClick={() => setView('visualComposer')}
-              >
-                [Dev] Open Visual Composer
-              </button>
-            )}
           </>
         )}
         {view === 'visualComposer' && (
