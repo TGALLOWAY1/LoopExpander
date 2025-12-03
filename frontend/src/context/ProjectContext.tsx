@@ -1,7 +1,7 @@
 /**
  * Project context for managing reference track and regions state.
  */
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { 
   Region, 
   MotifInstance, 
@@ -9,7 +9,8 @@ import {
   CallResponsePair, 
   Fill,
   RegionSubRegions,
-  ReferenceAnnotations
+  ReferenceAnnotations,
+  getAnnotations
 } from '../api/reference';
 
 /**
@@ -118,6 +119,40 @@ export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element
     });
     setSubregionsByRegionId(byRegionId);
   };
+
+  // Load annotations when referenceId changes
+  useEffect(() => {
+    if (!referenceId) {
+      setAnnotations(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAnnotations = async () => {
+      try {
+        const data = await getAnnotations(referenceId);
+        if (!cancelled) {
+          setAnnotations(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error loading annotations:', err);
+          // On error, set to empty structure to avoid breaking UI
+          setAnnotations({
+            referenceId,
+            regions: [],
+          });
+        }
+      }
+    };
+
+    loadAnnotations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [referenceId]);
 
   const value: ProjectState = {
     referenceId,
