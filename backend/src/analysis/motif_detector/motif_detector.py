@@ -332,51 +332,31 @@ def _align_motifs_with_regions(
                 instance.region_ids.append(region.id)
 
 
-def detect_motifs(
+def _detect_motifs_impl(
     reference_bundle: ReferenceBundle,
     regions: List[Region],
-    sensitivity: float = 0.5,
-    sensitivity_config: Optional[MotifSensitivityConfig] = None,
+    config: MotifSensitivityConfig,
     window_bars: float = DEFAULT_MOTIF_BARS,
     hop_bars: float = DEFAULT_MOTIF_HOP_BARS,
     exclude_full_mix: bool = False
 ) -> Tuple[List[MotifInstance], List[MotifGroup]]:
     """
-    Detect motifs in a reference bundle.
+    Internal implementation of motif detection.
     
-    NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
-    Each motif instance is explicitly tagged with its stem_role ("drums", "bass", "vocals", "instruments").
+    This function contains the actual motif detection logic and is called by
+    detect_motifs() to avoid recursion when using rescue sensitivity config.
     
     Args:
         reference_bundle: ReferenceBundle with loaded audio files
         regions: List of detected regions
-        sensitivity: Clustering sensitivity (0.0 = strict, 1.0 = loose) - DEPRECATED: use sensitivity_config instead
-        sensitivity_config: Per-stem sensitivity configuration. If provided, overrides sensitivity parameter.
-                          HIGHER sensitivity = more tolerant grouping (looser clustering, fewer groups)
-                          LOWER sensitivity = stricter grouping (tighter clustering, more groups)
+        config: Normalized sensitivity configuration (already clamped to safe range)
         window_bars: Window length in bars for segmentation
         hop_bars: Hop size in bars for segmentation
         exclude_full_mix: If True, skip full_mix processing (for stem-only analysis)
     
     Returns:
         Tuple of (list of MotifInstances, list of MotifGroups)
-        Each MotifInstance has stem_role field explicitly set to its source stem category.
     """
-    # Merge sensitivity config with defaults and normalize to safe range
-    # If sensitivity_config is None, use sensitivity parameter for all stems
-    if sensitivity_config is None:
-        merged = {**DEFAULT_MOTIF_SENSITIVITY}
-        for stem_key in merged.keys():
-            merged[stem_key] = sensitivity
-    else:
-        # Merge provided config with defaults (allows partial configs)
-        merged = {**DEFAULT_MOTIF_SENSITIVITY, **sensitivity_config}
-    
-    # Normalize config to clamp values to safe range [0.05, 0.95]
-    # This prevents extreme values that could lead to no motifs being detected
-    config = normalize_sensitivity_config(merged)
-    
-    logger.info("[Motifs] Using sensitivity config: %s", config)
     
     t0 = time.time()
     logger.info("Motif detection started", extra={"sensitivity_config": config, "window_bars": window_bars, "hop_bars": hop_bars})
@@ -546,4 +526,116 @@ def detect_motifs(
     )
     
     return all_instances, all_groups
+
+
+def detect_motifs(
+    reference_bundle: ReferenceBundle,
+    regions: List[Region],
+    sensitivity: float = 0.5,
+    sensitivity_config: Optional[MotifSensitivityConfig] = None,
+    window_bars: float = DEFAULT_MOTIF_BARS,
+    hop_bars: float = DEFAULT_MOTIF_HOP_BARS,
+    exclude_full_mix: bool = False
+) -> Tuple[List[MotifInstance], List[MotifGroup]]:
+    """
+    Detect motifs in a reference bundle.
+    
+    NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+    Each motif instance is explicitly tagged with its stem_role ("drums", "bass", "vocals", "instruments").
+    
+    If 0 motifs are detected, automatically retries with a "rescue" sensitivity config (looser)
+    to prevent the UI from going completely blank due to extreme or bad sensitivity values.
+    
+    Args:
+        reference_bundle: ReferenceBundle with loaded audio files
+        regions: List of detected regions
+        sensitivity: Clustering sensitivity (0.0 = strict, 1.0 = loose) - DEPRECATED: use sensitivity_config instead
+        sensitivity_config: Per-stem sensitivity configuration. If provided, overrides sensitivity parameter.
+                          HIGHER sensitivity = more tolerant grouping (looser clustering, fewer groups)
+                          LOWER sensitivity = stricter grouping (tighter clustering, more groups)
+        window_bars: Window length in bars for segmentation
+        hop_bars: Hop size in bars for segmentation
+        exclude_full_mix: If True, skip full_mix processing (for stem-only analysis)
+    
+    Returns:
+        Tuple of (list of MotifInstances, list of MotifGroups)
+        Each MotifInstance has stem_role field explicitly set to its source stem category.
+    """
+    # Merge sensitivity config with defaults and normalize to safe range
+    # If sensitivity_config is None, use sensitivity parameter for all stems
+    if sensitivity_config is None:
+        merged = {**DEFAULT_MOTIF_SENSITIVITY}
+        for stem_key in merged.keys():
+            merged[stem_key] = sensitivity
+    else:
+        # Merge provided config with defaults (allows partial configs)
+        merged = {**DEFAULT_MOTIF_SENSITIVITY, **sensitivity_config}
+    
+    # Normalize config to clamp values to safe range [0.05, 0.95]
+    # This prevents extreme values that could lead to no motifs being detected
+    config = normalize_sensitivity_config(merged)
+    
+    logger.info("[Motifs] First run - Using sensitivity config: %s", config)
+    
+    # Run motif detection with the provided config
+    instances, groups = _detect_motifs_impl(
+        reference_bundle=reference_bundle,
+        regions=regions,
+        config=config,
+        window_bars=window_bars,
+        hop_bars=hop_bars,
+        exclude_full_mix=exclude_full_mix
+    )
+    
+    # Fallback: If 0 motifs detected, retry with rescue config (looser sensitivity)
+    # This only triggers when count is exactly 0 (not 1-2, which is probably a real result)
+    if len(instances) == 0:
+        logger.warning(
+            "[Motifs] 0 motifs detected with current sensitivity config: %s",
+            config
+        )
+        logger.warning(
+            "[Motifs] Retrying with rescue sensitivity config (looser) to prevent blank UI"
+        )
+        
+        # Rescue config with looser sensitivity (0.7 for all stems)
+        rescue_config: MotifSensitivityConfig = {
+            "drums": 0.7,
+            "bass": 0.7,
+            "vocals": 0.7,
+            "instruments": 0.7,
+        }
+        
+        # Normalize rescue config to ensure it's in safe range
+        rescue_config = normalize_sensitivity_config(rescue_config)
+        
+        logger.info("[Motifs] Rescue pass - Using sensitivity config: %s", rescue_config)
+        
+        # Re-run with rescue config (using internal function to avoid recursion)
+        instances, groups = _detect_motifs_impl(
+            reference_bundle=reference_bundle,
+            regions=regions,
+            config=rescue_config,
+            window_bars=window_bars,
+            hop_bars=hop_bars,
+            exclude_full_mix=exclude_full_mix
+        )
+        
+        logger.info(
+            "[Motifs] Rescue pass complete - Found %d motif instances in %d groups",
+            len(instances),
+            len(groups)
+        )
+        
+        if len(instances) == 0:
+            logger.warning(
+                "[Motifs] Still 0 motifs after rescue pass. This may indicate: "
+                "audio too short/quiet, feature extraction failure, or segmentation issues."
+            )
+        else:
+            logger.info(
+                "[Motifs] Rescue pass succeeded - motifs detected with looser sensitivity"
+            )
+    
+    return instances, groups
 
