@@ -142,6 +142,8 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     regions,
   } = useProject();
 
+  // Component initialization
+
   // Create demo regions if in demo mode
   const demoRegions = useMemo(() => {
     if (!demoMode) return null;
@@ -196,6 +198,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   const projectId = demoMode ? 'demo-project' : (referenceId || null);
   const effectiveRegions = demoMode ? (demoRegions || []) : regions;
 
+
   // Use the new Visual Composer annotations hook
   // Use referenceId as projectId (they're the same in this context)
   const {
@@ -212,9 +215,12 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     retryLoad,
   } = useVisualComposerAnnotations(projectId, demoMode, demoRegions);
 
+  // Debug logs after useVisualComposerAnnotations hook
+
   // Build ordered region list from annotations (if available) or fallback to regions from context
   // Annotations have displayOrder and bar ranges, so prefer that for ordering
   const orderedRegions = useMemo(() => {
+    // DEBUG: this guard may be blocking lanes/waveform/timeline - returns empty array if no regions
     if (!vcAnnotations || !effectiveRegions || effectiveRegions.length === 0) {
       return effectiveRegions || [];
     }
@@ -267,12 +273,28 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   const currentRegion = orderedRegions[currentRegionIndex];
   const regionId = currentRegion?.id;
   
+  // Ensure selectedRegionId is stable - use regionId if available, otherwise fallback to first region
+  // This ensures selectedRegionId is NEVER undefined after initial load if regions exist
+  const selectedRegionId = regionId || (orderedRegions.length > 0 ? orderedRegions[0]?.id : undefined);
+
+  // Auto-select first region when regions become available and selectedRegionId is null/undefined
+  // This ensures a region is always selected when regions exist
+  useEffect(() => {
+    if (orderedRegions.length > 0 && !selectedRegionId) {
+      // Regions exist but no region is selected - auto-select the first one
+      setCurrentRegionIndex(0);
+    }
+  }, [orderedRegions, selectedRegionId]);
+  
+  
   // Get bar range from annotations or calculate from region time
   const currentRegionBarRange = useMemo(() => {
+    // DEBUG: this guard may be blocking lanes/waveform/timeline - returns null if no currentRegion
     if (!currentRegion) return null;
     
     // Try to get from annotations first
-    const regionAnn = vcAnnotations?.regions.find(r => r.regionId === currentRegion.id);
+    // DEBUG: this may crash if currentRegion is undefined - accessing .id without guard
+    const regionAnn = vcAnnotations?.regions.find(r => r.regionId === currentRegion?.id);
     if (regionAnn?.startBar !== null && regionAnn?.startBar !== undefined &&
         regionAnn?.endBar !== null && regionAnn?.endBar !== undefined) {
       return {
@@ -281,7 +303,17 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
       };
     }
     
-    // Fallback: calculate from region time (would need BPM, but for now return null)
+    // Fallback: use currentRegion.startBar/endBar if available (from orderedRegions mapping)
+    const regionWithBars = currentRegion as typeof currentRegion & { startBar?: number | null; endBar?: number | null };
+    if (regionWithBars.startBar !== null && regionWithBars.startBar !== undefined &&
+        regionWithBars.endBar !== null && regionWithBars.endBar !== undefined) {
+      return {
+        startBar: regionWithBars.startBar,
+        endBar: regionWithBars.endBar,
+      };
+    }
+    
+    // Last fallback: calculate from region time (would need BPM, but for now return null)
     // In a real implementation, we'd get BPM from the bundle
     return null;
   }, [currentRegion, vcAnnotations]);
@@ -295,6 +327,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     blocks: [],
     notes: '',
   });
+
 
   // Block selection state
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -333,67 +366,80 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     return `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }, []);
 
-  // Update Vc annotations when local region annotations change
-  // Use functional update to avoid dependency on vcAnnotations
-  const updateVcAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
-    if (!referenceId) return;
-
-    setVcAnnotations(prev => {
-      if (!prev) return prev; // Don't update if annotations haven't loaded yet
-      
-      const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion || null);
-      const otherRegions = prev.regions.filter(r => r.regionId !== updatedRegion.regionId);
-      return {
-        ...prev,
-        regions: [...otherRegions, updatedVcRegion],
-      };
-    });
-  }, [setVcAnnotations, referenceId, currentRegion]);
+  // updateVcAnnotations is now inlined in the sync effect below to avoid circular dependencies
 
   // Track if we're syncing from global to avoid circular updates
   const isSyncingFromGlobalRef = useRef(false);
   // Track the last regionId we synced to avoid unnecessary updates
   const lastSyncedRegionIdRef = useRef<string | undefined>(undefined);
+  // Track the last vcAnnotations we synced from to avoid re-syncing same state
+  const lastSyncedVcAnnotationsRef = useRef<VcAnnotations | null>(null);
 
-  // Find or create RegionAnnotations when regionId changes OR when vcAnnotations is first loaded
-  // This should NOT run every time vcAnnotations changes, only when:
-  // 1. regionId changes (user navigates to different region)
-  // 2. vcAnnotations transitions from null/undefined to having data (initial load)
+  // Initialize vcAnnotations ONLY when it's null and regions are available
+  // This should NOT depend on localRegionAnnotations or run on every render
+  // Note: The hook (useVisualComposerAnnotations) handles initial loading from the API.
+  // This effect is mainly a guard to prevent premature initialization attempts.
+  // In practice, vcAnnotations will be initialized by the hook's loadAnnotations.
   useEffect(() => {
-    if (!regionId) {
-      const emptyRegionAnnotations: RegionAnnotations = {
-        regionId: '',
-        lanes: [],
-        blocks: [],
-        notes: '',
-      };
-      isSyncingFromGlobalRef.current = true;
-      setLocalRegionAnnotations(emptyRegionAnnotations);
-      isSyncingFromGlobalRef.current = false;
-      lastSyncedRegionIdRef.current = undefined;
+    // Only initialize if vcAnnotations is null/undefined
+    if (vcAnnotations) return;
+    
+    // Only initialize if we have a referenceId and regions exist
+    if (!referenceId || !effectiveRegions || effectiveRegions.length === 0) return;
+    
+    // Don't initialize in demo mode (hook handles that)
+    if (demoMode) return;
+    
+    // The hook's loadAnnotations will handle initialization when projectId is set
+    // We don't need to create empty annotations here - the backend will return defaults
+    // This effect is just a guard to ensure we don't try to use vcAnnotations before it's loaded
+  }, [vcAnnotations, referenceId, effectiveRegions, demoMode]);
+
+  // Sync from vcAnnotations to localRegionAnnotations when selectedRegionId changes
+  // This effect should ONLY depend on [vcAnnotations, selectedRegionId]
+  useEffect(() => {
+    // Early return if prerequisites are missing
+    if (!vcAnnotations || !selectedRegionId) {
+      // Only set empty localRegionAnnotations if we truly have no data
+      if (!vcAnnotations && !selectedRegionId) {
+        const emptyRegionAnnotations: RegionAnnotations = {
+          regionId: '',
+          lanes: [],
+          blocks: [],
+          notes: '',
+        };
+        isSyncingFromGlobalRef.current = true;
+        setLocalRegionAnnotations(emptyRegionAnnotations);
+        isSyncingFromGlobalRef.current = false;
+        lastSyncedRegionIdRef.current = undefined;
+      }
       return;
     }
 
-    // Only sync if regionId changed OR if we haven't synced this region yet
-    if (lastSyncedRegionIdRef.current === regionId && vcAnnotations) {
-      // Already synced this region, skip unless vcAnnotations just loaded
+    // Check if we've already synced this exact combination
+    if (lastSyncedRegionIdRef.current === selectedRegionId && 
+        lastSyncedVcAnnotationsRef.current === vcAnnotations) {
+      // Already synced this region with this vcAnnotations state
       return;
     }
 
     // Find existing VcRegionAnnotations for current region
-    const existingVcRegion = vcAnnotations?.regions.find(
-      r => r.regionId === regionId
+    const existingVcRegion = vcAnnotations.regions.find(
+      r => r.regionId === selectedRegionId
     );
 
     if (existingVcRegion) {
+      const newLocalAnnotations = vcRegionToRegionAnnotations(existingVcRegion);
+      // Only update if actually different
       isSyncingFromGlobalRef.current = true;
-      setLocalRegionAnnotations(vcRegionToRegionAnnotations(existingVcRegion));
+      setLocalRegionAnnotations(newLocalAnnotations);
       isSyncingFromGlobalRef.current = false;
-      lastSyncedRegionIdRef.current = regionId;
-    } else if (vcAnnotations && currentRegion) {
-      // Create empty RegionAnnotations if not found
+      lastSyncedRegionIdRef.current = selectedRegionId;
+      lastSyncedVcAnnotationsRef.current = vcAnnotations;
+    } else if (currentRegion) {
+      // Create empty RegionAnnotations if not found in vcAnnotations
       const emptyRegionAnnotations: RegionAnnotations = {
-        regionId,
+        regionId: selectedRegionId,
         lanes: [],
         blocks: [],
         notes: '',
@@ -401,21 +447,24 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
       isSyncingFromGlobalRef.current = false;
-      lastSyncedRegionIdRef.current = regionId;
+      lastSyncedRegionIdRef.current = selectedRegionId;
+      lastSyncedVcAnnotationsRef.current = vcAnnotations;
       
       // Also ensure it's added to Vc annotations with region metadata
       const newVcRegion = regionAnnotationsToVcRegion(emptyRegionAnnotations, currentRegion);
       // Use functional update to avoid dependency on vcAnnotations
       setVcAnnotations(prev => {
         if (!prev) return prev;
+        // Check if region already exists
+        const regionExists = prev.regions.some(r => r.regionId === selectedRegionId);
+        if (regionExists) return prev;
         return {
           ...prev,
           regions: [...prev.regions, newVcRegion],
         };
       });
     }
-    // If vcAnnotations is null/undefined, wait for it to load
-  }, [regionId, currentRegion, vcAnnotations, setVcAnnotations]); // Keep vcAnnotations to sync on initial load
+  }, [vcAnnotations, selectedRegionId, currentRegion, setVcAnnotations]); // Only depend on vcAnnotations and selectedRegionId
 
   // Update Vc annotations whenever localRegionAnnotations changes (but not when syncing from global)
   // This effect should NOT depend on vcAnnotations to avoid circular updates
@@ -424,27 +473,62 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   const lastUpdatedLocalRef = useRef<string>('');
   
   useEffect(() => {
-    if (!localRegionAnnotations.regionId || isSyncingFromGlobalRef.current) {
+    // Don't sync if we're currently syncing from global (vcAnnotations -> localRegionAnnotations)
+    if (isSyncingFromGlobalRef.current) {
       return;
     }
     
-    // Only update if the regionId matches and we haven't already updated this exact state
-    if (localRegionAnnotations.regionId === regionId) {
-      const currentLocalJson = JSON.stringify(localRegionAnnotations);
+    // Don't sync if localRegionAnnotations is empty or doesn't match selectedRegionId
+    if (!localRegionAnnotations.regionId || localRegionAnnotations.regionId !== selectedRegionId) {
+      return;
+    }
+    
+    const currentLocalJson = JSON.stringify(localRegionAnnotations);
+    
+    // Skip if we've already updated for this exact localRegionAnnotations state
+    if (lastUpdatedRegionIdRef.current === selectedRegionId && lastUpdatedLocalRef.current === currentLocalJson) {
+      return;
+    }
+    
+    // Update the refs before calling updateVcAnnotations
+    lastUpdatedRegionIdRef.current = selectedRegionId;
+    lastUpdatedLocalRef.current = currentLocalJson;
+    
+    // Use functional setState to update vcAnnotations
+    setVcAnnotations(prev => {
+      if (!prev) return prev;
       
-      // Skip if we've already updated for this exact localRegionAnnotations state
-      if (lastUpdatedRegionIdRef.current === regionId && lastUpdatedLocalRef.current === currentLocalJson) {
-        return;
+      // Find the region to update
+      const regionIndex = prev.regions.findIndex(r => r.regionId === selectedRegionId);
+      if (regionIndex === -1) {
+        // Region doesn't exist in vcAnnotations, add it
+        if (!currentRegion) return prev;
+        const newVcRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion);
+        return {
+          ...prev,
+          regions: [...prev.regions, newVcRegion],
+        };
       }
       
-      // Update the refs before calling updateVcAnnotations
-      lastUpdatedRegionIdRef.current = regionId;
-      lastUpdatedLocalRef.current = currentLocalJson;
+      // Update existing region
+      const updatedVcRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
+      const updatedRegions = [...prev.regions];
+      updatedRegions[regionIndex] = updatedVcRegion;
       
-      // Call updateVcAnnotations directly - it uses functional setState internally
-      updateVcAnnotations(localRegionAnnotations);
-    }
-  }, [localRegionAnnotations, regionId, updateVcAnnotations]); // Removed vcAnnotations and setVcAnnotations from deps
+      // Check if anything actually changed
+      const prevRegion = prev.regions[regionIndex];
+      const prevJson = JSON.stringify(prevRegion);
+      const nextJson = JSON.stringify(updatedVcRegion);
+      if (prevJson === nextJson) {
+        return prev; // No change, return previous state
+      }
+      
+      return {
+        ...prev,
+        regions: updatedRegions,
+      };
+    });
+  }, [localRegionAnnotations, selectedRegionId, currentRegion, setVcAnnotations]); // Use selectedRegionId for stability
 
   // Handle manual save button click
   const handleSave = useCallback(async () => {
@@ -470,7 +554,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
    * Also ensures the region exists in Vc annotations if it doesn't already.
    */
   const addLane = useCallback(() => {
-    if (!localRegionAnnotations || !regionId || !referenceId) return;
+    if (!localRegionAnnotations || !selectedRegionId || !referenceId) return;
 
     // Ensure region exists in Vc annotations (create on demand)
     if (!vcAnnotations) {
@@ -483,7 +567,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
       // Use functional update to check if region exists
       setVcAnnotations(prev => {
         if (!prev) return prev;
-        const regionExists = prev.regions.some(r => r.regionId === regionId);
+        const regionExists = prev.regions.some(r => r.regionId === selectedRegionId);
         if (!regionExists) {
           const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
           return {
@@ -611,7 +695,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
    * Automatically syncs to global annotations via useEffect.
    */
   const addBlock = useCallback((partial: Omit<AnnotationBlock, 'id'>) => {
-    if (!localRegionAnnotations || !regionId) return;
+    if (!localRegionAnnotations || !selectedRegionId) return;
 
     const newBlock: AnnotationBlock = {
       id: createBlockId(),
@@ -679,12 +763,13 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
     
     // Fallback: rough estimate (1 bar = 2 seconds at 120 BPM)
     // For more accuracy, we'd need BPM from the bundle
-    return Math.ceil(currentRegion.duration / 2);
+    // DEBUG: this may crash if currentRegion is undefined - accessing .duration without guard
+    return Math.ceil((currentRegion?.duration || 0) / 2);
   };
 
   // Handle block creation from timeline
   const handleCreateBlock = useCallback((laneId: string, startBar: number) => {
-    if (!localRegionAnnotations || !regionId) return;
+    if (!localRegionAnnotations || !selectedRegionId) return;
 
     // Find the lane to get its color
     const lane = localRegionAnnotations.lanes.find(l => l.id === laneId);
@@ -710,13 +795,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
 
   // Audition hook (stub implementation)
   const handleAuditionBlock = useCallback((laneId: string, startBar: number, endBar: number) => {
-    console.log('[Audition] Block requested:', {
-      laneId,
-      startBar,
-      endBar,
-      duration: endBar - startBar,
-    });
-    
+    // Audition block (logging removed for production)
     setLastAuditionRequest({
       laneId,
       startBar,
@@ -833,7 +912,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
 
   // Delete block
   const handleDeleteBlock = (blockId: string) => {
-    if (!regionId) return;
+    if (!selectedRegionId) return;
 
     setLocalRegionAnnotations(prev => ({
       ...prev,
@@ -843,7 +922,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
 
   // Update region notes (with debouncing)
   const handleRegionNotesChange = useCallback((notes: string) => {
-    if (!regionId) return;
+    if (!selectedRegionId) return;
 
     // Update local state immediately for responsive UI
     setLocalRegionAnnotations(prev => ({
@@ -904,6 +983,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
   }, [currentRegionIndex, orderedRegions.length, isDirty, forceSave]);
 
   // Validation
+  // DEBUG: this guard may be blocking lanes/waveform/timeline - early return if no referenceId or regions
   if (!demoMode && (!referenceId || orderedRegions.length === 0)) {
     return (
       <div className="visual-composer-page">
@@ -937,6 +1017,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
           ← Back to Region Map
         </button>
         <div className="region-navigation">
+          {/* DEBUG: this guard may be blocking lanes/waveform/timeline - navigation may be disabled if no currentRegion */}
           <button
             className="nav-button"
             onClick={handlePrevRegion}
@@ -945,13 +1026,23 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
             ← Prev
           </button>
           <div className="region-info">
-            <h2>{currentRegion.name}</h2>
-            <span className="region-type">{currentRegion.type}</span>
-            {currentRegionBarRange && (
-              <span className="region-bar-range">
-                Bars {currentRegionBarRange.startBar.toFixed(1)} - {currentRegionBarRange.endBar.toFixed(1)}
-              </span>
-            )}
+            {/* DEBUG: this may crash if currentRegion is undefined - no guard before accessing .name */}
+            <h2>{currentRegion?.name || 'No Region'}</h2>
+            <span className="region-type">{currentRegion?.type || ''}</span>
+            {/* Bar range display - show if currentRegionBarRange exists OR use currentRegion.startBar/endBar as fallback */}
+            {(() => {
+              const regionWithBars = currentRegion as typeof currentRegion & { startBar?: number | null; endBar?: number | null };
+              const hasBarRange = currentRegionBarRange || (regionWithBars?.startBar !== null && regionWithBars?.startBar !== undefined && regionWithBars?.endBar !== null && regionWithBars?.endBar !== undefined);
+              if (!hasBarRange) return null;
+              
+              const startBar = currentRegionBarRange?.startBar ?? regionWithBars.startBar!;
+              const endBar = currentRegionBarRange?.endBar ?? regionWithBars.endBar!;
+              return (
+                <span className="region-bar-range">
+                  Bars {startBar.toFixed(1)} - {endBar.toFixed(1)}
+                </span>
+              );
+            })()}
             <span className="region-index">
               Region {currentRegionIndex + 1} of {orderedRegions.length}
             </span>
@@ -965,6 +1056,7 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
           </button>
         </div>
         <div className="save-section">
+          {/* DEBUG: this guard may be blocking lanes/waveform/timeline - save button disabled if !vcAnnotations */}
           <button
             className="save-button"
             onClick={handleSave}
@@ -1007,12 +1099,9 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
       </div>
 
       <div className="visual-composer-content">
-        <div className="lanes-section">
-          {!localRegionAnnotations ? (
-            <div className="lanes-empty-state">
-              <p>No region annotations available. Please select a region.</p>
-            </div>
-          ) : (
+        {/* Lanes section - show whenever currentRegion exists and localRegionAnnotations is not null */}
+        {currentRegion && localRegionAnnotations ? (
+          <div className="lanes-section">
             <LaneList
               lanes={localRegionAnnotations.lanes ?? []}
               onChangeLane={updateLane}
@@ -1020,21 +1109,41 @@ function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProp
               onReorderLanes={reorderLanes}
               onAddLane={addLane}
             />
-          )}
-        </div>
-
-        {/* Timeline area */}
-        {localRegionAnnotations && localRegionAnnotations.lanes.length > 0 && (
-          <div className="timeline-section">
-            <ComposerTimeline
-              regionAnnotations={localRegionAnnotations}
-              barCount={getRegionBars()}
-              onCreateBlock={handleCreateBlock}
-              onSelectBlock={handleSelectBlock}
-              onUpdateBlock={handleUpdateBlock}
-            />
+          </div>
+        ) : (
+          <div className="lanes-section">
+            <div className="lanes-empty-state">
+              <p>{!currentRegion ? 'No region selected. Please select a region.' : 'Loading region annotations...'}</p>
+            </div>
           </div>
         )}
+
+        {/* Timeline area - show whenever currentRegion exists and we can calculate bar range */}
+        {(() => {
+          if (!currentRegion) return null;
+          
+          const regionWithBars = currentRegion as typeof currentRegion & { startBar?: number | null; endBar?: number | null };
+          const hasBarRange = currentRegionBarRange || (regionWithBars?.startBar !== null && regionWithBars?.startBar !== undefined && regionWithBars?.endBar !== null && regionWithBars?.endBar !== undefined);
+          
+          if (!hasBarRange) return null;
+          
+          return (
+            <div className="timeline-section">
+              <ComposerTimeline
+                regionAnnotations={localRegionAnnotations || {
+                  regionId: selectedRegionId || '',
+                  lanes: [],
+                  blocks: [],
+                  notes: '',
+                }}
+                barCount={getRegionBars()}
+                onCreateBlock={handleCreateBlock}
+                onSelectBlock={handleSelectBlock}
+                onUpdateBlock={handleUpdateBlock}
+              />
+            </div>
+          );
+        })()}
 
         <div className="visual-composer-sidebar">
           <div className="region-notes-section">
