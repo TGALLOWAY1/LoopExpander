@@ -36,6 +36,10 @@ export interface VcRegionAnnotations {
   regionId: string;
   regionName?: string | null;
   notes?: string | null;
+  startBar?: number | null;
+  endBar?: number | null;
+  regionType?: string | null;
+  displayOrder?: number | null;
   lanes: VcLane[];
   blocks: VcBlock[];
 }

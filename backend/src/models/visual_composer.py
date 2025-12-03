@@ -56,15 +56,31 @@ class VisualComposerRegionAnnotations(BaseModel):
     """Annotations for a specific region in Visual Composer (aligned with PRD).
     
     Contains both lanes (metadata) and blocks (actual annotations).
+    Includes region metadata for alignment with the main Region model.
     """
     regionId: str = Field(..., description="ID of the region these annotations belong to")
     regionName: Optional[str] = Field(None, description="Optional name for the region")
     notes: Optional[str] = Field(None, description="Optional notes for the region")
+    startBar: Optional[float] = Field(None, ge=0.0, description="Start position of the region in bars")
+    endBar: Optional[float] = Field(None, ge=0.0, description="End position of the region in bars")
+    regionType: Optional[str] = Field(None, description="Type of the region (e.g., 'low_energy', 'build', 'high_energy', 'drop')")
+    displayOrder: Optional[int] = Field(None, ge=0, description="Display order of the region (for sorting)")
     lanes: List[VisualComposerLane] = Field(default_factory=list, description="List of lanes for this region")
     blocks: List[VisualComposerBlock] = Field(default_factory=list, description="List of blocks for this region")
     
     class Config:
         populate_by_name = True  # Allow both field names and aliases
+    
+    @field_validator('endBar')
+    @classmethod
+    def validate_end_bar(cls, v: Optional[float], info) -> Optional[float]:
+        """Ensure endBar is greater than startBar if both are provided."""
+        if v is None:
+            return v
+        start_bar = info.data.get('startBar')
+        if start_bar is not None and v <= start_bar:
+            raise ValueError(f"endBar must be greater than startBar, got start={start_bar}, end={v}")
+        return v
 
 
 class VisualComposerAnnotations(BaseModel):

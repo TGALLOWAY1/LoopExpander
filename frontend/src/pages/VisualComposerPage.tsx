@@ -112,11 +112,24 @@ function vcRegionToRegionAnnotations(vcRegion: VcRegionAnnotations): RegionAnnot
   };
 }
 
-function regionAnnotationsToVcRegion(regionAnnotations: RegionAnnotations, regionName?: string): VcRegionAnnotations {
+function regionAnnotationsToVcRegion(
+  regionAnnotations: RegionAnnotations,
+  region?: { id: string; name: string; type: string; start: number; end: number } | null
+): VcRegionAnnotations {
+  // Calculate bars from region time if available (will need BPM, but for now use a default)
+  // In a real implementation, we'd get BPM from the bundle, but for now we'll leave these as null
+  // The backend will populate them when creating defaults
+  const startBar = region ? null : null; // Will be populated by backend
+  const endBar = region ? null : null; // Will be populated by backend
+  
   return {
     regionId: regionAnnotations.regionId,
-    regionName: regionName || regionAnnotations.name || null,
+    regionName: region?.name || regionAnnotations.name || null,
     notes: regionAnnotations.notes || null,
+    startBar: startBar,
+    endBar: endBar,
+    regionType: region?.type || null,
+    displayOrder: null, // Will be set by backend based on region order
     lanes: regionAnnotations.lanes.map(annotationLaneToVcLane),
     blocks: regionAnnotations.blocks.map(annotationBlockToVcBlock),
   };
@@ -198,7 +211,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const updateVcAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
     if (!vcAnnotations || !referenceId) return;
 
-    const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion?.name);
+    const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion || null);
     const otherRegions = vcAnnotations.regions.filter(r => r.regionId !== updatedRegion.regionId);
     const next: VcAnnotations = {
       ...vcAnnotations,
@@ -226,6 +239,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     }
 
     // Find existing VcRegionAnnotations for current region
+    // The backend should have created defaults for all known regions, so this should always find one
     const existingVcRegion = vcAnnotations?.regions.find(
       r => r.regionId === regionId
     );
@@ -235,7 +249,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       setLocalRegionAnnotations(vcRegionToRegionAnnotations(existingVcRegion));
       isSyncingFromGlobalRef.current = false;
     } else {
-      // Create empty RegionAnnotations (will be added to Vc annotations on first edit)
+      // Create empty RegionAnnotations if not found (shouldn't happen if backend creates defaults)
+      // This is a fallback for edge cases
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId,
         lanes: [],
@@ -245,6 +260,15 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
       isSyncingFromGlobalRef.current = false;
+      
+      // Also ensure it's added to Vc annotations with region metadata
+      if (vcAnnotations && currentRegion) {
+        const newVcRegion = regionAnnotationsToVcRegion(emptyRegionAnnotations, currentRegion);
+        setVcAnnotations({
+          ...vcAnnotations,
+          regions: [...vcAnnotations.regions, newVcRegion],
+        });
+      }
     }
   }, [regionId, vcAnnotations]);
 
@@ -290,13 +314,13 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     if (!vcAnnotations) {
       const newVcAnnotations: VcAnnotations = {
         projectId: referenceId,
-        regions: [regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion?.name)],
+        regions: [regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null)],
       };
       setVcAnnotations(newVcAnnotations);
     } else {
       const regionExists = vcAnnotations.regions.some(r => r.regionId === regionId);
       if (!regionExists) {
-        const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion?.name);
+        const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
         setVcAnnotations({
           ...vcAnnotations,
           regions: [...vcAnnotations.regions, newRegion],
