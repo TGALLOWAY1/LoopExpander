@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from models.reference_bundle import ReferenceBundle
 from models.region import Region
 from utils.logger import get_logger
+from .config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
 
 logger = get_logger(__name__)
 
@@ -196,7 +197,8 @@ def _extract_features(
 
 def _cluster_motifs(
     instances: List[MotifInstance],
-    sensitivity: float = 0.5
+    sensitivity: float = 0.5,
+    stem_role: Optional[str] = None
 ) -> Tuple[List[MotifInstance], List[MotifGroup]]:
     """
     Cluster motif instances into groups using DBSCAN.
@@ -204,7 +206,9 @@ def _cluster_motifs(
     Args:
         instances: List of motif instances to cluster
         sensitivity: Clustering sensitivity (0.0 = strict, 1.0 = loose)
-                    Lower values create more groups, higher values create fewer groups
+                    HIGHER sensitivity = more tolerant grouping (looser clustering, fewer groups)
+                    LOWER sensitivity = stricter grouping (tighter clustering, more groups)
+        stem_role: Optional stem role to prefix group IDs for uniqueness
     
     Returns:
         Tuple of (updated instances with group_id, list of MotifGroups)
@@ -238,17 +242,18 @@ def _cluster_motifs(
     clustering = DBSCAN(eps=eps, min_samples=2, metric='euclidean')
     labels = clustering.fit_predict(features_normalized)
     
-    # Create groups
+    # Create groups with stem_role prefix for uniqueness
+    prefix = f"{stem_role}_" if stem_role else ""
     groups = {}
     for idx, (instance, label) in enumerate(zip(instances, labels)):
         if label == -1:
             # Noise point (doesn't belong to any cluster)
             # Assign it its own group
-            group_id = f"motif_group_{len(groups)}"
+            group_id = f"{prefix}motif_group_{len(groups)}"
             instance.group_id = group_id
             groups[group_id] = [instance]
         else:
-            group_id = f"motif_group_{label}"
+            group_id = f"{prefix}motif_group_{label}"
             instance.group_id = group_id
             if group_id not in groups:
                 groups[group_id] = []
@@ -309,6 +314,7 @@ def detect_motifs(
     reference_bundle: ReferenceBundle,
     regions: List[Region],
     sensitivity: float = 0.5,
+    sensitivity_config: Optional[MotifSensitivityConfig] = None,
     window_bars: float = DEFAULT_MOTIF_BARS,
     hop_bars: float = DEFAULT_MOTIF_HOP_BARS
 ) -> Tuple[List[MotifInstance], List[MotifGroup]]:
@@ -318,18 +324,32 @@ def detect_motifs(
     Args:
         reference_bundle: ReferenceBundle with loaded audio files
         regions: List of detected regions
-        sensitivity: Clustering sensitivity (0.0 = strict, 1.0 = loose)
+        sensitivity: Clustering sensitivity (0.0 = strict, 1.0 = loose) - DEPRECATED: use sensitivity_config instead
+        sensitivity_config: Per-stem sensitivity configuration. If provided, overrides sensitivity parameter.
+                          HIGHER sensitivity = more tolerant grouping (looser clustering, fewer groups)
+                          LOWER sensitivity = stricter grouping (tighter clustering, more groups)
         window_bars: Window length in bars for segmentation
         hop_bars: Hop size in bars for segmentation
     
     Returns:
         Tuple of (list of MotifInstances, list of MotifGroups)
     """
+    # Merge sensitivity config with defaults
+    # If sensitivity_config is None, use sensitivity parameter for all stems
+    if sensitivity_config is None:
+        config = {**DEFAULT_MOTIF_SENSITIVITY}
+        for stem_key in config.keys():
+            config[stem_key] = sensitivity
+    else:
+        # Merge provided config with defaults (allows partial configs)
+        config = {**DEFAULT_MOTIF_SENSITIVITY, **sensitivity_config}
+    
     t0 = time.time()
-    logger.info("Motif detection started", extra={"sensitivity": sensitivity, "window_bars": window_bars, "hop_bars": hop_bars})
+    logger.info("Motif detection started", extra={"sensitivity_config": config, "window_bars": window_bars, "hop_bars": hop_bars})
     
     bpm = reference_bundle.bpm
     all_instances = []
+    all_groups = []
     
     # Process each stem
     stems = {
@@ -376,6 +396,7 @@ def detect_motifs(
         
         # Extract features for each segment
         t_feat_start = time.time()
+        stem_instances = []
         for start_time, end_time in segments:
             features = _extract_features(audio_mono, sr, start_time, end_time)
             
@@ -388,36 +409,51 @@ def detect_motifs(
                     end_time=end_time,
                     features=features
                 )
+                stem_instances.append(instance)
                 all_instances.append(instance)
                 instance_counter += 1
         t_feat_end = time.time()
-        stem_instance_count = len([i for i in all_instances if i.stem_role == stem_role])
-        logger.info("Motif feature extraction complete", extra={"stem_role": stem_role, "segment_count": len(segments), "instance_count": stem_instance_count, "elapsed_sec": round(t_feat_end - t_feat_start, 3)})
+        logger.info("Motif feature extraction complete", extra={"stem_role": stem_role, "segment_count": len(segments), "instance_count": len(stem_instances), "elapsed_sec": round(t_feat_end - t_feat_start, 3)})
+        
+        # Cluster motifs for this stem with per-stem sensitivity
+        # Map stem_role to config key (full_mix uses default sensitivity)
+        stem_category = stem_role if stem_role in ["drums", "bass", "vocals", "instruments"] else "drums"
+        stem_sensitivity = config.get(stem_category, DEFAULT_MOTIF_SENSITIVITY[stem_category])
+        
+        if len(stem_instances) > 0:
+            t_cluster_start = time.time()
+            clustered_instances, stem_groups = _cluster_motifs(stem_instances, stem_sensitivity, stem_role=stem_role)
+            t_cluster_end = time.time()
+            all_groups.extend(stem_groups)
+            logger.info(
+                f"Clustered {stem_role} stem motifs",
+                extra={
+                    "stem_role": stem_role,
+                    "sensitivity": stem_sensitivity,
+                    "instance_count": len(clustered_instances),
+                    "group_count": len(stem_groups),
+                    "elapsed_sec": round(t_cluster_end - t_cluster_start, 3),
+                },
+            )
     
     logger.info(f"Total motif instances extracted: {len(all_instances)}")
-    
-    # Cluster motifs
-    t_cluster_start = time.time()
-    instances, groups = _cluster_motifs(all_instances, sensitivity)
-    t_cluster_end = time.time()
     logger.info(
         "Motif clustering complete",
         extra={
-            "motif_instance_count": len(instances),
-            "motif_group_count": len(groups),
-            "elapsed_sec": round(t_cluster_end - t_cluster_start, 3),
+            "motif_instance_count": len(all_instances),
+            "motif_group_count": len(all_groups),
         },
     )
     
     # Align motifs with regions
-    _align_motifs_with_regions(instances, regions)
+    _align_motifs_with_regions(all_instances, regions)
     
     t1 = time.time()
     elapsed = round(t1 - t0, 3)
     logger.info(
         "Motif detection finished",
-        extra={"total_elapsed_sec": elapsed, "sensitivity": sensitivity, "instance_count": len(instances), "group_count": len(groups)},
+        extra={"total_elapsed_sec": elapsed, "sensitivity_config": config, "instance_count": len(all_instances), "group_count": len(all_groups)},
     )
     
-    return instances, groups
+    return all_instances, all_groups
 

@@ -2,6 +2,7 @@
 from typing import Optional, List
 
 from stem_ingest.audio_file import AudioFile
+from analysis.motif_detector.config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
 
 
 class ReferenceBundle:
@@ -15,7 +16,8 @@ class ReferenceBundle:
         instruments: AudioFile,
         full_mix: AudioFile,
         bpm: float,
-        key: Optional[str] = None
+        key: Optional[str] = None,
+        motif_sensitivity_config: Optional[MotifSensitivityConfig] = None
     ):
         """
         Initialize a ReferenceBundle.
@@ -28,6 +30,7 @@ class ReferenceBundle:
             full_mix: Full mix audio file
             bpm: Beats per minute
             key: Optional musical key (e.g., "C major", "A minor")
+            motif_sensitivity_config: Optional per-stem motif sensitivity configuration
         """
         self.drums = drums
         self.bass = bass
@@ -36,6 +39,11 @@ class ReferenceBundle:
         self.full_mix = full_mix
         self.bpm = bpm
         self.key = key
+        # Use a copy of defaults to avoid shared state
+        self.motif_sensitivity_config: MotifSensitivityConfig = (
+            motif_sensitivity_config.copy() if motif_sensitivity_config 
+            else DEFAULT_MOTIF_SENSITIVITY.copy()
+        )
     
     def validate_lengths(self, tolerance: float = 0.05) -> None:
         """

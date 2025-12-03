@@ -94,7 +94,7 @@ export function RegionBlock({
   highlightedGroupId = null,
   onMotifHover,
   subregions,
-  bpm = 120, // Default BPM if not provided
+  bpm = 130, // Default BPM if not provided
   showMotifDots = false, // Default to false - use DNA lanes instead
 }: RegionBlockProps): JSX.Element {
   const widthPercent = (region.duration / totalDuration) * 100;

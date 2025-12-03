@@ -5,8 +5,9 @@ import uuid
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Body
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from models.store import (
     REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
@@ -19,6 +20,7 @@ from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import (
     detect_motifs, MotifInstance, _cluster_motifs, _align_motifs_with_regions
 )
+from analysis.motif_detector.config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
@@ -234,9 +236,17 @@ async def analyze_reference(
         REFERENCE_REGIONS[reference_id] = regions
         logger.info(f"Detected {len(regions)} regions for reference {reference_id}")
         
-        # Detect motifs
-        logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity}")
-        instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+        # Detect motifs using stored sensitivity config
+        # The query parameter is kept for backward compatibility but we prefer stored config
+        # If query param differs from default, it overrides stored config
+        if motif_sensitivity != DEFAULT_MOTIF_SENSITIVITY:
+            # Query parameter provided and differs from default, use it for all stems
+            logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity} (from query param, overriding stored config)")
+            instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+        else:
+            # Use stored per-stem sensitivity config
+            logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
+            instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config)
         
         # Store raw instances (before clustering) for re-clustering with different sensitivity
         # Create deep copies to avoid modifying the clustered instances
@@ -455,6 +465,164 @@ async def get_motifs(
         "instanceCount": len(instances_dict),
         "groupCount": len(groups_dict)
     }
+
+
+class MotifSensitivityUpdate(BaseModel):
+    """Update model for motif sensitivity configuration."""
+    drums: Optional[float] = Field(None, ge=0.0, le=1.0, description="Drums sensitivity (0.0 = strict, 1.0 = loose)")
+    bass: Optional[float] = Field(None, ge=0.0, le=1.0, description="Bass sensitivity (0.0 = strict, 1.0 = loose)")
+    vocals: Optional[float] = Field(None, ge=0.0, le=1.0, description="Vocals sensitivity (0.0 = strict, 1.0 = loose)")
+    instruments: Optional[float] = Field(None, ge=0.0, le=1.0, description="Instruments sensitivity (0.0 = strict, 1.0 = loose)")
+
+
+@router.get("/{reference_id}/motif-sensitivity")
+async def get_motif_sensitivity(reference_id: str):
+    """
+    Get motif sensitivity configuration for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with motif sensitivity configuration
+    """
+    logger.info(f"Getting motif sensitivity for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    return {
+        "referenceId": reference_id,
+        "motifSensitivityConfig": bundle.motif_sensitivity_config
+    }
+
+
+@router.patch("/{reference_id}/motif-sensitivity")
+async def update_motif_sensitivity(
+    reference_id: str,
+    update: MotifSensitivityUpdate = Body(...)
+):
+    """
+    Update motif sensitivity configuration for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+        update: Partial update with sensitivity values (only provided keys are updated)
+    
+    Returns:
+        JSON with updated motif sensitivity configuration
+    """
+    logger.info(f"Updating motif sensitivity for reference_id: {reference_id}, update={update}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Validate and merge provided values
+    update_dict = update.model_dump(exclude_unset=True)
+    
+    # Validate each value is in range [0.0, 1.0] (Pydantic Field already does this, but double-check)
+    for key, value in update_dict.items():
+        if value is not None and (value < 0.0 or value > 1.0):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid sensitivity value for {key}: {value}. Must be between 0.0 and 1.0"
+            )
+    
+    # Merge provided keys into existing config
+    bundle.motif_sensitivity_config.update(update_dict)
+    
+    logger.info(f"Updated motif sensitivity config for {reference_id}: {bundle.motif_sensitivity_config}")
+    
+    return {
+        "referenceId": reference_id,
+        "motifSensitivityConfig": bundle.motif_sensitivity_config
+    }
+
+
+@router.post("/{reference_id}/reanalyze-motifs")
+async def reanalyze_motifs(reference_id: str):
+    """
+    Re-run motif detection for a reference bundle using stored sensitivity configuration.
+    
+    This endpoint re-detects motifs using the current motif_sensitivity_config stored
+    on the reference bundle. Regions must already be detected (via /analyze).
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with analysis status and motif counts
+    """
+    logger.info(f"Re-analyzing motifs for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Check if regions have been detected
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    
+    try:
+        # Detect motifs using stored sensitivity config
+        logger.info(f"Re-detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
+        instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config)
+        
+        # Store raw instances (before clustering) for re-clustering with different sensitivity
+        raw_instances = []
+        for inst in instances:
+            raw_inst = MotifInstance(
+                id=inst.id,
+                stem_role=inst.stem_role,
+                start_time=inst.start_time,
+                end_time=inst.end_time,
+                features=inst.features.copy(),  # Copy numpy array
+                group_id=None,  # Reset clustering
+                is_variation=False,  # Reset variation flag
+                region_ids=inst.region_ids.copy()  # Keep region alignment
+            )
+            raw_instances.append(raw_inst)
+        REFERENCE_MOTIF_INSTANCES_RAW[reference_id] = raw_instances
+        
+        # Store motifs
+        REFERENCE_MOTIFS[reference_id] = (instances, groups)
+        logger.info(f"Re-detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
+        
+        return {
+            "referenceId": reference_id,
+            "motifInstanceCount": len(instances),
+            "motifGroupCount": len(groups),
+            "status": "ok"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error re-analyzing motifs for reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to re-analyze motifs: {str(e)}"
+        )
 
 
 @router.get("/{reference_id}/call-response")
