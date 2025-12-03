@@ -209,7 +209,15 @@ def build_call_response_lanes(
     sorted_regions = sorted(regions, key=lambda r: r.start)
     region_ids = [r.id for r in sorted_regions]
     
-    logger.info(f"Built {len(lanes)} lanes with {sum(len(lane.events) for lane in lanes)} total events")
+    total_events = sum(len(lane.events) for lane in lanes)
+    logger.info(f"Built {len(lanes)} lanes with {total_events} total events")
+    
+    # Log lanes summary for sanity check
+    lanes_summary = {lane.stem: len(lane.events) for lane in lanes}
+    logger.info(
+        "[CallResponseLanes] Lanes summary: %s",
+        lanes_summary
+    )
     
     return CallResponseByStemResponse(
         reference_id=reference_id,

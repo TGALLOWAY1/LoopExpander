@@ -515,6 +515,13 @@ def _detect_motifs_impl(
         },
     )
     
+    # Log grouping result for sanity check
+    logger.info(
+        "[Motifs] Grouping result: %d motifs in %d groups",
+        len(all_instances),
+        len(all_groups),
+    )
+    
     # Align motifs with regions
     _align_motifs_with_regions(all_instances, regions)
     

@@ -488,5 +488,17 @@ def detect_call_response(
         extra={"pairs_by_stem": dict(pairs_by_stem), "total_pairs": len(all_pairs)}
     )
     
+    # Log call/response detection result for sanity check
+    # Use stem_category if available, otherwise fall back to from_stem_role
+    stem_distribution = Counter([
+        getattr(p, "stem_category", p.from_stem_role) if hasattr(p, "stem_category") else p.from_stem_role
+        for p in all_pairs
+    ])
+    logger.info(
+        "[CallResponse] Detected %d call/response pairs (stem distribution: %s)",
+        len(all_pairs),
+        dict(stem_distribution),
+    )
+    
     return all_pairs
 
