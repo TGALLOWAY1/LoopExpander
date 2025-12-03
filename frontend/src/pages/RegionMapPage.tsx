@@ -7,7 +7,7 @@ import { FiveLayerRegionMap } from '../components/FiveLayerRegionMap';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
 import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
-import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions } from '../api/reference';
+import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions, reanalyzeMotifs } from '../api/reference';
 import { useCallResponseLanes } from '../hooks/useCallResponseLanes';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
