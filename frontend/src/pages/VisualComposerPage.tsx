@@ -414,26 +414,6 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return localRegionAnnotations.blocks.find(b => b.id === selectedBlockId);
   }, [selectedBlockId, localRegionAnnotations]);
 
-  // Handle block selection and audition
-  const handleSelectBlock = useCallback((blockId: string) => {
-    setSelectedBlockId(blockId);
-    
-    // Find the block for audition
-    const block = localRegionAnnotations?.blocks.find(b => b.id === blockId);
-    if (block) {
-      // Find the lane to get laneId
-      const lane = localRegionAnnotations?.lanes.find(l => l.id === block.laneId);
-      if (lane) {
-        handleAuditionBlock(lane.id, block.startBar, block.endBar);
-      }
-    }
-  }, [localRegionAnnotations]);
-
-  // Handle block notes change
-  const handleBlockNotesChange = useCallback((blockId: string, notes: string) => {
-    updateBlock(blockId, { notes: notes.trim() || null });
-  }, [updateBlock]);
-
   // Audition hook (stub implementation)
   const handleAuditionBlock = useCallback((laneId: string, startBar: number, endBar: number) => {
     console.log('[Audition] Block requested:', {
@@ -451,6 +431,26 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     
     // TODO: Implement actual audio playback in future phase
   }, []);
+
+  // Handle block selection and audition
+  const handleSelectBlock = useCallback((blockId: string) => {
+    setSelectedBlockId(blockId);
+    
+    // Find the block for audition
+    const block = localRegionAnnotations?.blocks.find(b => b.id === blockId);
+    if (block) {
+      // Find the lane to get laneId
+      const lane = localRegionAnnotations?.lanes.find(l => l.id === block.laneId);
+      if (lane) {
+        handleAuditionBlock(lane.id, block.startBar, block.endBar);
+      }
+    }
+  }, [localRegionAnnotations, handleAuditionBlock]);
+
+  // Handle block notes change
+  const handleBlockNotesChange = useCallback((blockId: string, notes: string) => {
+    updateBlock(blockId, { notes: notes.trim() || null });
+  }, [updateBlock]);
 
   // Handle block update from timeline
   const handleUpdateBlock = useCallback((blockId: string, patch: Partial<AnnotationBlock>) => {
