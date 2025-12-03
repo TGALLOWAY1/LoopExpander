@@ -3,15 +3,33 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 
-from models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS
+from models.store import (
+    REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
+    REFERENCE_CALL_RESPONSE, REFERENCE_FILLS, REFERENCE_MOTIF_INSTANCES_RAW
+)
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
 from analysis.region_detector.region_detector import detect_regions
+from analysis.motif_detector.motif_detector import (
+    detect_motifs, MotifInstance, _cluster_motifs, _align_motifs_with_regions
+)
+from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+from analysis.fill_detector.fill_detector import detect_fills, FillConfig
+from config import (
+    DEFAULT_MOTIF_SENSITIVITY,
+    DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
+    DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
+    DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
+    DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
+    DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
+    DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
+    DEFAULT_FILL_MIN_TRANSIENT_DENSITY
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -22,10 +40,81 @@ router = APIRouter(prefix="/reference", tags=["reference"])
 TEMP_DIR = Path("tmp/reference")
 
 
+def _get_project_root() -> Path:
+    """Get the project root directory (3 levels up from this file: api -> src -> backend -> root)."""
+    return Path(__file__).resolve().parents[3]
+
+
+def _get_gallium_test_paths() -> Dict[str, Path]:
+    """Get file paths for Gallium test stems."""
+    root = _get_project_root() / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
+    return {
+        "drums": root / "Drums.wav",
+        "bass": root / "Bass.wav",
+        "vocals": root / "Vocals.wav",
+        "instruments": root / "Instruments.wav",
+        "full_mix": root / "Full Mix.wav",
+    }
+
+
 @router.get("/ping")
 async def ping():
     """Health check endpoint for reference API."""
     return {"message": "reference api ok"}
+
+
+@router.post("/dev/gallium")
+async def create_gallium_dev_reference():
+    """
+    Dev-only endpoint to load Gallium test stems from disk.
+    
+    This endpoint loads the test audio files from the test data directory
+    and processes them through the same upload/analysis pipeline as the
+    normal upload endpoint.
+    
+    Returns:
+        JSON with referenceId, bpm, duration, and key (same format as /upload)
+    """
+    logger.info("Loading Gallium test stems from disk")
+    
+    # Get test file paths
+    paths = _get_gallium_test_paths()
+    
+    # Validate all files exist
+    for role, path in paths.items():
+        if not path.exists():
+            logger.error(f"Missing Gallium test file for {role}: {path}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Missing Gallium test file for {role}: {path}"
+            )
+    
+    # Generate reference ID
+    reference_id = str(uuid.uuid4())
+    logger.info(f"Creating dev reference with ID: {reference_id}")
+    
+    try:
+        # Load reference bundle directly from file paths
+        logger.info(f"Loading reference bundle from test files")
+        bundle = load_reference_bundle(paths)
+        
+        # Store in memory (same as normal upload)
+        REFERENCE_BUNDLES[reference_id] = bundle
+        logger.info(f"Stored reference bundle {reference_id}: {bundle}")
+        
+        return {
+            "referenceId": reference_id,
+            "bpm": bundle.bpm,
+            "duration": bundle.full_mix.duration,
+            "key": bundle.key
+        }
+    
+    except Exception as e:
+        logger.error(f"Error loading Gallium test reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load Gallium test reference: {str(e)}"
+        )
 
 
 @router.post("/upload")
@@ -107,15 +196,19 @@ async def upload_reference(
 
 
 @router.post("/{reference_id}/analyze")
-async def analyze_reference(reference_id: str):
+async def analyze_reference(
+    reference_id: str,
+    motif_sensitivity: float = Query(DEFAULT_MOTIF_SENSITIVITY, ge=0.0, le=1.0, description="Motif clustering sensitivity (0.0 = strict, 1.0 = loose)")
+):
     """
-    Analyze a reference bundle to detect regions.
+    Analyze a reference bundle to detect regions and motifs.
     
     Args:
         reference_id: ID of the reference bundle to analyze
+        motif_sensitivity: Motif clustering sensitivity (0.0 = strict, 1.0 = loose)
     
     Returns:
-        JSON with analysis status and region count
+        JSON with analysis status, region count, and motif counts
     """
     logger.info(f"Starting analysis for reference_id: {reference_id}")
     
@@ -137,9 +230,65 @@ async def analyze_reference(reference_id: str):
         REFERENCE_REGIONS[reference_id] = regions
         logger.info(f"Detected {len(regions)} regions for reference {reference_id}")
         
+        # Detect motifs
+        logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity}")
+        instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+        
+        # Store raw instances (before clustering) for re-clustering with different sensitivity
+        # Create deep copies to avoid modifying the clustered instances
+        raw_instances = []
+        for inst in instances:
+            raw_inst = MotifInstance(
+                id=inst.id,
+                stem_role=inst.stem_role,
+                start_time=inst.start_time,
+                end_time=inst.end_time,
+                features=inst.features.copy(),  # Copy numpy array
+                group_id=None,  # Reset clustering
+                is_variation=False,  # Reset variation flag
+                region_ids=inst.region_ids.copy()  # Keep region alignment
+            )
+            raw_instances.append(raw_inst)
+        REFERENCE_MOTIF_INSTANCES_RAW[reference_id] = raw_instances
+        
+        # Store motifs
+        REFERENCE_MOTIFS[reference_id] = (instances, groups)
+        logger.info(f"Detected {len(instances)} motif instances in {len(groups)} groups for reference {reference_id}")
+        
+        # Detect call-response relationships
+        logger.info(f"Detecting call-response relationships for reference {reference_id}")
+        call_response_config = CallResponseConfig(
+            min_offset_bars=DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
+            max_offset_bars=DEFAULT_CALL_RESPONSE_MAX_OFFSET_BARS,
+            min_similarity=DEFAULT_CALL_RESPONSE_MIN_SIMILARITY,
+            min_confidence=DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE
+        )
+        call_response_pairs = detect_call_response(instances, regions, bundle.bpm, config=call_response_config)
+        
+        # Store call-response pairs
+        REFERENCE_CALL_RESPONSE[reference_id] = call_response_pairs
+        logger.info(f"Detected {len(call_response_pairs)} call-response pairs for reference {reference_id}")
+        
+        # Detect fills
+        logger.info(f"Detecting fills for reference {reference_id}")
+        fill_config = FillConfig(
+            pre_boundary_window_bars=DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
+            transient_density_threshold_multiplier=DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
+            min_transient_density=DEFAULT_FILL_MIN_TRANSIENT_DENSITY
+        )
+        fills = detect_fills(bundle, regions, config=fill_config)
+        
+        # Store fills
+        REFERENCE_FILLS[reference_id] = fills
+        logger.info(f"Detected {len(fills)} fills for reference {reference_id}")
+        
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
+            "motifInstanceCount": len(instances),
+            "motifGroupCount": len(groups),
+            "callResponseCount": len(call_response_pairs),
+            "fillCount": len(fills),
             "status": "ok"
         }
     
@@ -199,4 +348,208 @@ async def get_regions(reference_id: str):
         "referenceId": reference_id,
         "regions": regions_dict,
         "count": len(regions_dict)
+    }
+
+
+@router.get("/{reference_id}/motifs")
+async def get_motifs(
+    reference_id: str,
+    sensitivity: Optional[float] = Query(None, ge=0.0, le=1.0, description="Optional: Re-cluster motifs with different sensitivity (0.0 = strict, 1.0 = loose)")
+):
+    """
+    Get detected motifs for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+        sensitivity: Optional sensitivity parameter to re-cluster motifs with different threshold
+    
+    Returns:
+        JSON with motif instances and groups
+    """
+    logger.info(f"Getting motifs for reference_id: {reference_id}, sensitivity={sensitivity}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if motifs have been detected
+    if reference_id not in REFERENCE_MOTIF_INSTANCES_RAW:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Motifs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    # Get regions for re-alignment
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    raw_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+    
+    # If sensitivity is provided and different from stored, re-cluster
+    if sensitivity is not None:
+        logger.info(f"Re-clustering motifs with sensitivity={sensitivity}")
+        # Create fresh copies of instances for re-clustering
+        instances_to_cluster = []
+        for raw_inst in raw_instances:
+            fresh_inst = MotifInstance(
+                id=raw_inst.id,
+                stem_role=raw_inst.stem_role,
+                start_time=raw_inst.start_time,
+                end_time=raw_inst.end_time,
+                features=raw_inst.features.copy(),
+                group_id=None,
+                is_variation=False,
+                region_ids=[]
+            )
+            instances_to_cluster.append(fresh_inst)
+        
+        # Re-cluster with new sensitivity
+        instances, groups = _cluster_motifs(instances_to_cluster, sensitivity)
+        
+        # Re-align with regions
+        _align_motifs_with_regions(instances, regions)
+    else:
+        # Use stored clustering
+        instances, groups = REFERENCE_MOTIFS[reference_id]
+    
+    # Convert MotifInstance dataclasses to dictionaries for JSON serialization
+    instances_dict = []
+    for inst in instances:
+        instances_dict.append({
+            "id": inst.id,
+            "stemRole": inst.stem_role,
+            "startTime": inst.start_time,
+            "endTime": inst.end_time,
+            "duration": inst.duration,
+            "groupId": inst.group_id,
+            "isVariation": inst.is_variation,
+            "regionIds": inst.region_ids
+        })
+    
+    # Convert MotifGroup dataclasses to dictionaries
+    groups_dict = []
+    for group in groups:
+        groups_dict.append({
+            "id": group.id,
+            "label": group.label,
+            "memberIds": [m.id for m in group.members],
+            "memberCount": len(group.members),
+            "variationCount": len(group.variations)
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "instances": instances_dict,
+        "groups": groups_dict,
+        "instanceCount": len(instances_dict),
+        "groupCount": len(groups_dict)
+    }
+
+
+@router.get("/{reference_id}/call-response")
+async def get_call_response(reference_id: str):
+    """
+    Get detected call-response pairs for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with call-response pairs
+    """
+    logger.info(f"Getting call-response pairs for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if call-response pairs have been detected
+    if reference_id not in REFERENCE_CALL_RESPONSE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Call-response pairs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    pairs = REFERENCE_CALL_RESPONSE[reference_id]
+    
+    # Convert CallResponsePair dataclasses to dictionaries for JSON serialization
+    pairs_dict = []
+    for pair in pairs:
+        pairs_dict.append({
+            "id": pair.id,
+            "fromMotifId": pair.from_motif_id,
+            "toMotifId": pair.to_motif_id,
+            "fromStemRole": pair.from_stem_role,
+            "toStemRole": pair.to_stem_role,
+            "fromTime": pair.from_time,
+            "toTime": pair.to_time,
+            "timeOffset": pair.time_offset,
+            "confidence": pair.confidence,
+            "regionId": pair.region_id,
+            "isInterStem": pair.is_inter_stem,
+            "isIntraStem": pair.is_intra_stem
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "pairs": pairs_dict,
+        "count": len(pairs_dict)
+    }
+
+
+@router.get("/{reference_id}/fills")
+async def get_fills(reference_id: str):
+    """
+    Get detected fills for a reference bundle.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with fill objects
+    """
+    logger.info(f"Getting fills for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    # Check if fills have been detected
+    if reference_id not in REFERENCE_FILLS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fills not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    fills = REFERENCE_FILLS[reference_id]
+    
+    # Convert Fill dataclasses to dictionaries for JSON serialization
+    fills_dict = []
+    for fill in fills:
+        fills_dict.append({
+            "id": fill.id,
+            "time": fill.time,
+            "stemRoles": fill.stem_roles,
+            "regionId": fill.region_id,
+            "confidence": fill.confidence,
+            "fillType": fill.fill_type
+        })
+    
+    return {
+        "referenceId": reference_id,
+        "fills": fills_dict,
+        "count": len(fills_dict)
     }

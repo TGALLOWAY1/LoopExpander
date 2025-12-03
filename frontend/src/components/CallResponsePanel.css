@@ -1,0 +1,137 @@
+/**
+ * Styles for CallResponsePanel component.
+ */
+.call-response-panel {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.call-response-panel h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: #333;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.call-response-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.call-response-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.call-response-region-group {
+  border-left: 3px solid #007bff;
+  padding-left: 1rem;
+}
+
+.call-response-region-header {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.75rem;
+  text-transform: capitalize;
+}
+
+.call-response-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.call-response-pair {
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.call-response-pair:hover {
+  background-color: #f0f0f0;
+  border-color: #007bff;
+  transform: translateX(4px);
+}
+
+.call-response-pair.highlighted {
+  background-color: #e3f2fd;
+  border-color: #2196f3;
+  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+}
+
+.call-response-pair-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.call-response-pair-arrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.call-stem,
+.response-stem {
+  font-weight: 600;
+  color: #333;
+  text-transform: capitalize;
+}
+
+.call-stem {
+  color: #2196f3;
+}
+
+.response-stem {
+  color: #4caf50;
+}
+
+.arrow {
+  color: #666;
+  font-size: 1.2rem;
+}
+
+.call-response-pair-time {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.call-response-pair-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+}
+
+.call-response-type {
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.call-response-type.inter-stem {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.call-response-type.intra-stem {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.call-response-confidence {
+  color: #666;
+  font-weight: 500;
+}
+
