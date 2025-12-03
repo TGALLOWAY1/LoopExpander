@@ -92,6 +92,11 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return `lane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }, []);
 
+  // Helper to generate unique block IDs
+  const createBlockId = useCallback(() => {
+    return `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
   // Update global annotations when local region annotations change
   const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
     if (!annotations) return;
@@ -292,6 +297,68 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       return {
         ...prev,
         lanes: [...reorderedLanes, ...remainingLanes],
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  // ============================================================================
+  // Block CRUD Helper Functions
+  // ============================================================================
+
+  /**
+   * Adds a new block to localRegionAnnotations.
+   * Generates a unique ID and adds the block to the blocks array.
+   * Automatically syncs to global annotations via useEffect.
+   */
+  const addBlock = useCallback((partial: Omit<AnnotationBlock, 'id'>) => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    const newBlock: AnnotationBlock = {
+      id: createBlockId(),
+      ...partial,
+    };
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        blocks: [...(prev.blocks || []), newBlock],
+      };
+    });
+  }, [localRegionAnnotations, regionId, createBlockId]);
+
+  /**
+   * Updates a block by ID with a partial patch of properties.
+   * Finds the block and applies the patch, then syncs to global annotations via useEffect.
+   */
+  const updateBlock = useCallback((id: string, patch: Partial<AnnotationBlock>) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.blocks) return prev;
+      
+      return {
+        ...prev,
+        blocks: prev.blocks.map(block => 
+          block.id === id ? { ...block, ...patch } : block
+        ),
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  /**
+   * Deletes a block by ID from localRegionAnnotations.
+   * Removes the block from the blocks array and syncs to global annotations via useEffect.
+   */
+  const deleteBlock = useCallback((id: string) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.blocks) return prev;
+      
+      return {
+        ...prev,
+        blocks: prev.blocks.filter(block => block.id !== id),
       };
     });
   }, [localRegionAnnotations]);
