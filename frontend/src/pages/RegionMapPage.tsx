@@ -369,6 +369,13 @@ function RegionMapPage(): JSX.Element {
             <MotifSensitivityPanel
               referenceId={referenceId}
               onReanalyze={handleReanalyze}
+              onDataRefetch={(data) => {
+                // Update all state with refetched data
+                setMotifs(data.motifs.instances, data.motifs.groups);
+                setCallResponsePairs(data.callResponse.pairs);
+                setFills(data.fills.fills);
+                setSubregions(data.subregions.regions);
+              }}
             />
             <MotifGroupsPanel
               groups={motifGroups}

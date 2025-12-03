@@ -4,21 +4,33 @@
 import { useState, useEffect } from 'react';
 import { useMotifSensitivity } from '../hooks/useMotifSensitivity';
 import { MotifSensitivityConfig } from '../types/motifSensitivity';
+import { reanalyzeMotifs, getMotifs, getCallResponse, getFills, fetchReferenceSubregions } from '../api/reference';
 import './MotifSensitivityPanel.css';
 
 export type MotifSensitivityPanelProps = {
   referenceId: string | null;
   onReanalyze?: () => void;
+  onDataRefetch?: (data: {
+    motifs: { instances: any[]; groups: any[] };
+    callResponse: { pairs: any[] };
+    fills: { fills: any[] };
+    subregions: { regions: any[] };
+  }) => void;
 };
 
 export function MotifSensitivityPanel({
   referenceId,
-  onReanalyze
+  onReanalyze,
+  onDataRefetch
 }: MotifSensitivityPanelProps): JSX.Element {
   const { config, setConfig, save, loading, saving, error } = useMotifSensitivity(referenceId || '');
   
   // Local state for slider values (optimistic updates)
   const [localConfig, setLocalConfig] = useState<MotifSensitivityConfig | null>(null);
+  
+  // State for reanalysis status
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<string | null>(null);
 
   // Sync local config when hook config changes
   useEffect(() => {
@@ -85,19 +97,60 @@ export function MotifSensitivityPanel({
 
   // Handle Apply & Re-Analyze button click
   const handleApplyAndReanalyze = async () => {
-    if (!localConfig) return;
+    if (!localConfig || !referenceId) return;
 
     try {
       // Save the configuration
       await save(localConfig);
       
-      // Trigger reanalysis callback if provided
+      // Start reanalysis
+      setReanalyzing(true);
+      setReanalyzeStatus('Re-analyzing...');
+      
+      // Call reanalyze endpoint
+      await reanalyzeMotifs(referenceId);
+      
+      // Refetch all dependent data
+      const [motifsResponse, callResponseResponse, fillsResponse, subregionsResponse] = await Promise.all([
+        getMotifs(referenceId), // Uses stored config automatically
+        getCallResponse(referenceId),
+        getFills(referenceId),
+        fetchReferenceSubregions(referenceId)
+      ]);
+      
+      // Pass refetched data to parent if callback provided
+      if (onDataRefetch) {
+        onDataRefetch({
+          motifs: { instances: motifsResponse.instances, groups: motifsResponse.groups },
+          callResponse: { pairs: callResponseResponse.pairs },
+          fills: { fills: fillsResponse.fills },
+          subregions: { regions: subregionsResponse.regions }
+        });
+      }
+      
+      // Also call legacy callback if provided
       if (onReanalyze) {
         onReanalyze();
       }
+      
+      // Show success status
+      setReanalyzeStatus('Updated.');
+      
+      // Clear status after 2 seconds
+      setTimeout(() => {
+        setReanalyzeStatus(null);
+      }, 2000);
+      
     } catch (err) {
-      console.error('Error saving sensitivity configuration:', err);
-      // Error is already handled by the hook
+      console.error('Error during reanalysis:', err);
+      setReanalyzeStatus(err instanceof Error ? `Error: ${err.message}` : 'Error during reanalysis');
+      
+      // Clear error status after 5 seconds
+      setTimeout(() => {
+        setReanalyzeStatus(null);
+      }, 5000);
+    } finally {
+      setReanalyzing(false);
     }
   };
 
@@ -149,11 +202,16 @@ export function MotifSensitivityPanel({
         <button
           type="button"
           onClick={handleApplyAndReanalyze}
-          disabled={saving || !localConfig}
+          disabled={saving || reanalyzing || !localConfig}
           className="motif-sensitivity-apply-button"
         >
-          {saving ? 'Saving...' : 'Apply & Re-Analyze'}
+          {saving ? 'Saving...' : reanalyzing ? 'Re-analyzing...' : 'Apply & Re-Analyze'}
         </button>
+        {reanalyzeStatus && (
+          <div className={`motif-sensitivity-status ${reanalyzeStatus.startsWith('Error') ? 'error' : 'success'}`}>
+            {reanalyzeStatus}
+          </div>
+        )}
       </div>
 
       {error && (

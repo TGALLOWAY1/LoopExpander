@@ -163,3 +163,21 @@
   font-size: 0.85rem;
 }
 
+.motif-sensitivity-status {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.motif-sensitivity-status.success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.motif-sensitivity-status.error {
+  background-color: #ffebee;
+  color: #d32f2f;
+}
+
