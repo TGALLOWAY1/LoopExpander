@@ -281,8 +281,18 @@ export function FiveLayerRegionMap({
                 </div>
               )}
               {lane.events.map((event) => {
-                const leftPercent = barToPercent(event.startBar);
-                const widthPercent = barWidthPercent(event.startBar, event.endBar);
+                // Handle both camelCase and snake_case field names (defensive)
+                const startBar = event.startBar ?? (event as any).start_bar ?? 0;
+                const endBar = event.endBar ?? (event as any).end_bar ?? 0;
+                
+                // Validate that we have valid bar values
+                if (typeof startBar !== 'number' || typeof endBar !== 'number' || isNaN(startBar) || isNaN(endBar)) {
+                  console.warn(`[FiveLayerRegionMap] Invalid event bar values:`, event);
+                  return null;
+                }
+                
+                const leftPercent = barToPercent(startBar);
+                const widthPercent = barWidthPercent(startBar, endBar);
                 
                 // Encode role: call = solid, response = outlined
                 const isCall = event.role === 'call';
@@ -310,7 +320,7 @@ export function FiveLayerRegionMap({
                     }}
                     onMouseEnter={() => setHoveredGroupId(event.groupId)}
                     onMouseLeave={() => setHoveredGroupId(null)}
-                    title={`${stemDisplayName} ${event.role}${event.label ? `: ${event.label}` : ''}\n${event.startBar.toFixed(1)} - ${event.endBar.toFixed(1)} bars${event.intensity != null ? `\nIntensity: ${(event.intensity * 100).toFixed(0)}%` : ''}\nGroup: ${event.groupId}`}
+                    title={`${stemDisplayName} ${event.role}${event.label ? `: ${event.label}` : ''}\n${startBar.toFixed(1)} - ${endBar.toFixed(1)} bars${event.intensity != null ? `\nIntensity: ${(event.intensity * 100).toFixed(0)}%` : ''}\nGroup: ${event.groupId}`}
                   >
                     {widthPercent > 2 && (
                       <div className="five-layer-event-label">
