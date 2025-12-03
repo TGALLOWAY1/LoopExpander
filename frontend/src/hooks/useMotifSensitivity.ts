@@ -1,17 +1,25 @@
+/**
+ * Hook for managing motif sensitivity configuration for a reference.
+ * 
+ * Provides state management for loading, editing, and saving motif sensitivity
+ * settings per stem type (drums, bass, vocals, instruments).
+ */
+
 import React from "react";
-
 import { getMotifSensitivity, updateMotifSensitivity } from "../api/motifSensitivity";
-
 import { MotifSensitivityConfig, MotifSensitivityUpdate } from "../types/motifSensitivity";
 
 /**
- * Hook for managing motif sensitivity configuration for a reference bundle.
- * 
- * Automatically loads the configuration when the referenceId changes.
- * Provides methods to update and save the configuration.
+ * Hook to manage motif sensitivity configuration for a reference.
  * 
  * @param referenceId - ID of the reference bundle
- * @returns Object with config state, loading/saving states, error, and save function
+ * @returns Object with:
+ *   - config: Current sensitivity configuration (null while loading)
+ *   - setConfig: Function to update config locally (optimistic update)
+ *   - save: Function to save changes to backend
+ *   - loading: Whether initial load is in progress
+ *   - saving: Whether save operation is in progress
+ *   - error: Any error that occurred during load or save
  */
 export function useMotifSensitivity(referenceId: string) {
   const [config, setConfig] = React.useState<MotifSensitivityConfig | null>(null);
@@ -19,7 +27,14 @@ export function useMotifSensitivity(referenceId: string) {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<any>(null);
 
+  // Load configuration when referenceId changes
   React.useEffect(() => {
+    if (!referenceId) {
+      setConfig(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     getMotifSensitivity(referenceId)
@@ -29,13 +44,16 @@ export function useMotifSensitivity(referenceId: string) {
   }, [referenceId]);
 
   /**
-   * Save updated sensitivity configuration.
-   * Only provided keys in the update will be changed; omitted keys remain unchanged.
+   * Save sensitivity configuration updates to the backend.
    * 
    * @param update - Partial update with sensitivity values to change
-   * @returns Promise that resolves when the update is complete
+   * @returns Promise that resolves when save completes
    */
   async function save(update: MotifSensitivityUpdate) {
+    if (!referenceId) {
+      throw new Error("Cannot save: referenceId is required");
+    }
+
     setSaving(true);
     setError(null);
     try {
