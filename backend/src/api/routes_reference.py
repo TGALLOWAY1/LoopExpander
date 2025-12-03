@@ -36,7 +36,8 @@ from config import (
     DEFAULT_CALL_RESPONSE_MIN_CONFIDENCE,
     DEFAULT_FILL_PRE_BOUNDARY_WINDOW_BARS,
     DEFAULT_FILL_TRANSIENT_DENSITY_THRESHOLD_MULTIPLIER,
-    DEFAULT_FILL_MIN_TRANSIENT_DENSITY
+    DEFAULT_FILL_MIN_TRANSIENT_DENSITY,
+    USE_FULL_MIX_FOR_LANE_VIEW
 )
 from utils.logger import get_logger
 
@@ -730,10 +731,49 @@ async def get_call_response_by_stem(reference_id: str):
     
     call_response_pairs = REFERENCE_CALL_RESPONSE[reference_id]
     
+    # NOTE: The Region Map stem lanes are intended to be per-stem only; full-mix motifs are ignored here by design.
+    # Filter out any pairs involving full_mix unless explicitly enabled
+    if not USE_FULL_MIX_FOR_LANE_VIEW:
+        stem_only_pairs = [
+            pair for pair in call_response_pairs
+            if pair.from_stem_role != "full_mix" and pair.to_stem_role != "full_mix"
+        ]
+        filtered_count = len(call_response_pairs) - len(stem_only_pairs)
+        if filtered_count > 0:
+            logger.info(
+                f"[CallResponseLanes] Filtered out {filtered_count} full-mix pairs (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+            )
+        call_response_pairs = stem_only_pairs
+    else:
+        logger.warning(
+            "[CallResponseLanes] USE_FULL_MIX_FOR_LANE_VIEW=True - full-mix motifs will be included (not recommended for stem lanes)"
+        )
+    
     # Get motif instances if available (for getting end times)
+    # Filter to only per-stem motifs (exclude full_mix)
     motif_instances = None
     if reference_id in REFERENCE_MOTIF_INSTANCES_RAW:
-        motif_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+        raw_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+        if not USE_FULL_MIX_FOR_LANE_VIEW:
+            # Filter out full_mix motif instances
+            stem_only_instances = [
+                inst for inst in raw_instances
+                if inst.stem_role != "full_mix"
+            ]
+            filtered_motif_count = len(raw_instances) - len(stem_only_instances)
+            if filtered_motif_count > 0:
+                logger.info(
+                    f"[CallResponseLanes] Filtered out {filtered_motif_count} full-mix motif instances (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+                )
+            motif_instances = stem_only_instances
+        else:
+            motif_instances = raw_instances
+    
+    # Log summary of per-stem motifs being used
+    per_stem_motif_count = len(motif_instances) if motif_instances else 0
+    logger.info(
+        f"[CallResponseLanes] Using {per_stem_motif_count} per-stem motifs; full-mix motifs disabled (USE_FULL_MIX_FOR_LANE_VIEW=False)"
+    )
     
     # Build lanes
     try:

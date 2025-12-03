@@ -87,12 +87,29 @@ def build_call_response_lanes(
     Returns:
         CallResponseByStemResponse with lanes organized by stem
     """
-    logger.info(f"Building call/response lanes for reference {reference_id}")
+    logger.info(f"[CallResponseLanes] Building call/response lanes for reference {reference_id}")
+    
+    # NOTE: The Region Map stem lanes are intended to be per-stem only; full-mix motifs are ignored here by design.
+    # Verify that we're only working with per-stem motifs
+    if motif_instances:
+        full_mix_count = sum(1 for inst in motif_instances if inst.stem_role == "full_mix")
+        if full_mix_count > 0:
+            logger.warning(
+                f"[CallResponseLanes] WARNING: {full_mix_count} full-mix motif instances detected in lane building. "
+                "These should have been filtered out upstream."
+            )
+        per_stem_count = len(motif_instances) - full_mix_count
+        logger.info(
+            f"[CallResponseLanes] Processing {per_stem_count} per-stem motif instances for lane building"
+        )
     
     # Create a map of motif ID to instance (if provided) for getting end times
     motif_map = {}
     if motif_instances:
         for inst in motif_instances:
+            # Skip full_mix instances if they somehow made it through
+            if inst.stem_role == "full_mix":
+                continue
             motif_map[inst.id] = inst
     
     # Group pairs by a group_id (for now, use pair ID as group_id)
