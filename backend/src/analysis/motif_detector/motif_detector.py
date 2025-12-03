@@ -237,8 +237,7 @@ def _cluster_motifs(
     scaler = StandardScaler()
     features_normalized = scaler.fit_transform(feature_matrix)
     
-    # Compute base threshold from pairwise distances
-    # Use median distance as the base threshold for consistent scaling
+    # Compute pairwise distances
     from scipy.spatial.distance import pdist
     distances = pdist(features_normalized, metric='euclidean')
     
@@ -247,12 +246,13 @@ def _cluster_motifs(
         min_dist = np.min(distances)
         max_dist = np.max(distances)
         mean_dist = np.mean(distances)
+        median_dist = np.median(distances)
         # Get first 20 distances (or all if fewer)
         first_20_dists = distances[:min(20, len(distances))].tolist()
         
         logger.info(
             "[DIAG] Stem=%s motif stats: min_dist=%.4f max_dist=%.4f mean_dist=%.4f median_dist=%.4f",
-            stem_role or "unknown", min_dist, max_dist, mean_dist, np.median(distances)
+            stem_role or "unknown", min_dist, max_dist, mean_dist, median_dist
         )
         logger.info(
             "[DIAG] First 20 dists (stem=%s): %s",
@@ -262,23 +262,40 @@ def _cluster_motifs(
     else:
         logger.warning("[DIAG] Stem=%s: No pairwise distances computed (empty or single instance)", stem_role or "unknown")
     
-    base_threshold = np.median(distances) if len(distances) > 0 else 1.0
+    # Compute eps using percentile-based approach
+    # Maps sensitivity [0,1] to a range of distance percentiles
+    # sensitivity=0.0 → strict (lower percentile, fewer motifs per group)
+    # sensitivity=1.0 → looser (higher percentile, more motifs per group, but not "everything")
+    if len(distances) == 0:
+        # Fallback: keep eps small but non-zero
+        eps = 0.1
+        logger.warning(f"[Motifs] Stem={stem_role or 'unknown'}: No distances, using fallback eps={eps:.4f}")
+    else:
+        # Define percentile window for eps range
+        # q_low = stricter end (25th percentile)
+        # q_high = looser end (60th percentile)
+        q_low = np.percentile(distances, 25.0)
+        q_high = np.percentile(distances, 60.0)
+        
+        # Safety: if q_high <= q_low due to weird distribution, nudge
+        if q_high <= q_low:
+            q_high = q_low * 1.1
+        
+        # Map sensitivity in [0, 1] into that range
+        # sensitivity: 0.0 = strict (q_low), 1.0 = loose (q_high)
+        sensitivity = float(sensitivity)  # ensure float
+        sensitivity = max(0.0, min(1.0, sensitivity))  # clamp to [0, 1]
+        eps = q_low + (q_high - q_low) * sensitivity
+        
+        logger.info(
+            "[DIAG] Stem %s: sens=%.3f q_low=%.4f q_high=%.4f → eps=%.4f",
+            stem_role or "unknown",
+            sensitivity,
+            q_low,
+            q_high,
+            eps,
+        )
     
-    # Calculate effective threshold based on sensitivity
-    # Formula: effective_threshold = base_threshold * (1.0 + 0.5 * stem_sensitivity)
-    # This ensures:
-    #   - sensitivity = 0.0 → effective_threshold = base_threshold * 1.0 (strict, smaller threshold)
-    #   - sensitivity = 1.0 → effective_threshold = base_threshold * 1.5 (loose, larger threshold)
-    # Lower sensitivity → smaller threshold → stricter grouping (more groups)
-    # Higher sensitivity → larger threshold → looser grouping (fewer groups)
-    effective_threshold = base_threshold * (1.0 + 0.5 * sensitivity)
-    
-    # Ensure minimum and maximum bounds to avoid extreme clustering
-    min_eps = np.percentile(distances, 2.0) if len(distances) > 0 else 0.1
-    max_eps = np.percentile(distances, 75.0) if len(distances) > 0 else 10.0
-    eps = np.clip(effective_threshold, min_eps, max_eps)
-    
-    logger.debug(f"[Motifs] Stem={stem_role or 'unknown'} sensitivity={sensitivity:.3f} base_threshold={base_threshold:.4f} effective_threshold={effective_threshold:.4f} eps={eps:.4f}")
     logger.info(f"Clustering {len(instances)} motifs with sensitivity={sensitivity:.2f}, eps={eps:.4f}")
     
     # Apply DBSCAN
@@ -663,7 +680,7 @@ def detect_motifs(
         else:
             logger.info(
                 "[Motifs] Rescue pass succeeded - motifs detected with looser sensitivity"
-            )
+    )
     
     return instances, groups
 
