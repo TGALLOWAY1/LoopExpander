@@ -52,6 +52,53 @@
   gap: 1rem;
 }
 
+.save-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.save-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: white;
+  background-color: #1976d2;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-button:hover:not(:disabled) {
+  background-color: #1565c0;
+}
+
+.save-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.save-status {
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+
+.save-status.success {
+  color: #2e7d32;
+  background-color: #e8f5e9;
+}
+
+.save-status.error {
+  color: #c62828;
+  background-color: #ffebee;
+}
+
 .region-navigation {
   display: flex;
   align-items: center;

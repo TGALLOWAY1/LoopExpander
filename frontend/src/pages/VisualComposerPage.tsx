@@ -36,12 +36,17 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { 
-  ReferenceAnnotations, 
   RegionAnnotations, 
   AnnotationLane, 
   AnnotationBlock,
-  saveAnnotations
 } from '../api/reference';
+import {
+  type VcAnnotations,
+  type VcRegionAnnotations,
+  type VcLane,
+  type VcBlock,
+} from '../api/visualComposerApi';
+import { useVisualComposerAnnotations } from '../hooks/useVisualComposerAnnotations';
 import { LaneList } from '../components/visualComposer/LaneList';
 import { ComposerTimeline } from '../components/visualComposer/ComposerTimeline';
 import { NotesPanel } from '../components/visualComposer/NotesPanel';
@@ -51,19 +56,100 @@ interface VisualComposerPageProps {
   onBack: () => void;
 }
 
+// Helper functions to convert between Vc types and Annotation types (for component compatibility)
+function vcLaneToAnnotationLane(vcLane: VcLane): AnnotationLane {
+  return {
+    id: vcLane.id,
+    name: vcLane.name,
+    color: vcLane.color || undefined,
+    collapsed: vcLane.collapsed,
+    order: vcLane.order,
+  };
+}
+
+function annotationLaneToVcLane(annotationLane: AnnotationLane): VcLane {
+  return {
+    id: annotationLane.id,
+    name: annotationLane.name,
+    color: annotationLane.color || null,
+    collapsed: annotationLane.collapsed,
+    order: annotationLane.order,
+  };
+}
+
+function vcBlockToAnnotationBlock(vcBlock: VcBlock): AnnotationBlock {
+  return {
+    id: vcBlock.id,
+    laneId: vcBlock.laneId,
+    startBar: vcBlock.startBar,
+    endBar: vcBlock.endBar,
+    color: vcBlock.color || undefined,
+    type: vcBlock.type,
+    label: null, // VcBlock doesn't have label, use null
+    notes: vcBlock.notes || undefined,
+  };
+}
+
+function annotationBlockToVcBlock(annotationBlock: AnnotationBlock): VcBlock {
+  return {
+    id: annotationBlock.id,
+    laneId: annotationBlock.laneId,
+    startBar: annotationBlock.startBar,
+    endBar: annotationBlock.endBar,
+    color: annotationBlock.color || null,
+    type: annotationBlock.type,
+    notes: annotationBlock.notes || null,
+  };
+}
+
+function vcRegionToRegionAnnotations(vcRegion: VcRegionAnnotations): RegionAnnotations {
+  return {
+    regionId: vcRegion.regionId,
+    name: vcRegion.regionName || undefined,
+    notes: vcRegion.notes || undefined,
+    lanes: vcRegion.lanes.map(vcLaneToAnnotationLane),
+    blocks: vcRegion.blocks.map(vcBlockToAnnotationBlock),
+  };
+}
+
+function regionAnnotationsToVcRegion(regionAnnotations: RegionAnnotations, regionName?: string): VcRegionAnnotations {
+  return {
+    regionId: regionAnnotations.regionId,
+    regionName: regionName || regionAnnotations.name || null,
+    notes: regionAnnotations.notes || null,
+    lanes: regionAnnotations.lanes.map(annotationLaneToVcLane),
+    blocks: regionAnnotations.blocks.map(annotationBlockToVcBlock),
+  };
+}
+
 function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const { 
     referenceId, 
     regions,
-    annotations,
-    setAnnotations
   } = useProject();
+
+  // Use the new Visual Composer annotations hook
+  // Use referenceId as projectId (they're the same in this context)
+  const {
+    annotations: vcAnnotations,
+    setAnnotations: setVcAnnotations,
+    isLoading: isLoadingAnnotations,
+    error: annotationsError,
+    saveAnnotations: saveVcAnnotations,
+    isSaving,
+  } = useVisualComposerAnnotations(referenceId || null);
 
   const [currentRegionIndex, setCurrentRegionIndex] = useState(0);
   const currentRegion = regions?.[currentRegionIndex];
   const regionId = currentRegion?.id;
 
-  // Local state for current region's annotations
+  // Save status for UI feedback
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
+    type: null,
+    message: '',
+  });
+
+  // Local state for current region's annotations (using Annotation types for component compatibility)
   const [localRegionAnnotations, setLocalRegionAnnotations] = useState<RegionAnnotations>({
     regionId: regionId || '',
     lanes: [],
@@ -85,7 +171,6 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Color palette for lanes (rotates through these colors)
   const LANE_COLORS = [
@@ -109,19 +194,23 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }, []);
 
-  // Update global annotations when local region annotations change
-  const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
-    if (!annotations) return;
+  // Update Vc annotations when local region annotations change
+  const updateVcAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
+    if (!vcAnnotations || !referenceId) return;
 
-    const others = annotations.regions.filter(r => r.regionId !== updatedRegion.regionId);
-    const next = { ...annotations, regions: [...others, updatedRegion] };
-    setAnnotations(next);
-  }, [annotations, setAnnotations]);
+    const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion?.name);
+    const otherRegions = vcAnnotations.regions.filter(r => r.regionId !== updatedRegion.regionId);
+    const next: VcAnnotations = {
+      ...vcAnnotations,
+      regions: [...otherRegions, updatedVcRegion],
+    };
+    setVcAnnotations(next);
+  }, [vcAnnotations, setVcAnnotations, referenceId, currentRegion]);
 
   // Track if we're syncing from global to avoid circular updates
   const isSyncingFromGlobalRef = useRef(false);
 
-  // Find or create RegionAnnotations when regionId or annotations change
+  // Find or create RegionAnnotations when regionId or vcAnnotations change
   useEffect(() => {
     if (!regionId) {
       const emptyRegionAnnotations: RegionAnnotations = {
@@ -136,17 +225,17 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       return;
     }
 
-    // Find existing RegionAnnotations for current region
-    const existingRegionAnnotations = annotations?.regions.find(
+    // Find existing VcRegionAnnotations for current region
+    const existingVcRegion = vcAnnotations?.regions.find(
       r => r.regionId === regionId
     );
 
-    if (existingRegionAnnotations) {
+    if (existingVcRegion) {
       isSyncingFromGlobalRef.current = true;
-      setLocalRegionAnnotations(existingRegionAnnotations);
+      setLocalRegionAnnotations(vcRegionToRegionAnnotations(existingVcRegion));
       isSyncingFromGlobalRef.current = false;
     } else {
-      // Create empty RegionAnnotations
+      // Create empty RegionAnnotations (will be added to Vc annotations on first edit)
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId,
         lanes: [],
@@ -156,44 +245,33 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
       isSyncingFromGlobalRef.current = false;
-      // Also add to global annotations
-      if (annotations) {
-        updateGlobalAnnotations(emptyRegionAnnotations);
-      }
     }
-  }, [regionId, annotations, updateGlobalAnnotations]);
+  }, [regionId, vcAnnotations]);
 
-  // Update global annotations whenever localRegionAnnotations changes (but not when syncing from global)
+  // Update Vc annotations whenever localRegionAnnotations changes (but not when syncing from global)
   useEffect(() => {
-    if (localRegionAnnotations.regionId && !isSyncingFromGlobalRef.current) {
-      updateGlobalAnnotations(localRegionAnnotations);
+    if (localRegionAnnotations.regionId && !isSyncingFromGlobalRef.current && vcAnnotations) {
+      updateVcAnnotations(localRegionAnnotations);
     }
-  }, [localRegionAnnotations, updateGlobalAnnotations]);
+  }, [localRegionAnnotations, updateVcAnnotations, vcAnnotations]);
 
-  // Debounced save function
-  const debouncedSave = useCallback((data: ReferenceAnnotations) => {
-    if (!referenceId) return;
+  // Handle manual save button click
+  const handleSave = useCallback(async () => {
+    if (!vcAnnotations || !referenceId) return;
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    try {
+      await saveVcAnnotations();
+      setSaveStatus({ type: 'success', message: 'Annotations saved successfully!' });
+      setTimeout(() => setSaveStatus({ type: null, message: '' }), 3000);
+    } catch (err) {
+      console.error('Error saving annotations:', err);
+      setSaveStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to save annotations',
+      });
+      setTimeout(() => setSaveStatus({ type: null, message: '' }), 5000);
     }
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await saveAnnotations(referenceId, data);
-        setAnnotations(data);
-      } catch (err) {
-        console.error('Error saving annotations:', err);
-      }
-    }, 1000); // 1 second debounce
-  }, [referenceId, setAnnotations]);
-
-  // Save annotations when they change
-  useEffect(() => {
-    if (annotations && referenceId) {
-      debouncedSave(annotations);
-    }
-  }, [annotations, referenceId, debouncedSave]);
+  }, [vcAnnotations, referenceId, saveVcAnnotations]);
 
   // ============================================================================
   // Lane CRUD Helper Functions
@@ -202,10 +280,29 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   /**
    * Adds a new lane to localRegionAnnotations.
    * Creates a lane with generated ID, default name, rotating color, and proper order.
-   * Automatically syncs to global annotations via useEffect.
+   * Automatically syncs to Vc annotations via useEffect.
+   * Also ensures the region exists in Vc annotations if it doesn't already.
    */
   const addLane = useCallback(() => {
-    if (!localRegionAnnotations || !regionId) return;
+    if (!localRegionAnnotations || !regionId || !referenceId) return;
+
+    // Ensure region exists in Vc annotations (create on demand)
+    if (!vcAnnotations) {
+      const newVcAnnotations: VcAnnotations = {
+        projectId: referenceId,
+        regions: [regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion?.name)],
+      };
+      setVcAnnotations(newVcAnnotations);
+    } else {
+      const regionExists = vcAnnotations.regions.some(r => r.regionId === regionId);
+      if (!regionExists) {
+        const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion?.name);
+        setVcAnnotations({
+          ...vcAnnotations,
+          regions: [...vcAnnotations.regions, newRegion],
+        });
+      }
+    }
 
     const lanes = localRegionAnnotations.lanes || [];
     const maxOrder = lanes.length > 0 
@@ -232,7 +329,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
         lanes: [...(prev.lanes || []), newLane],
       };
     });
-  }, [localRegionAnnotations, regionId, createLaneId]);
+  }, [localRegionAnnotations, regionId, referenceId, vcAnnotations, setVcAnnotations, currentRegion, createLaneId]);
 
   /**
    * Updates a lane by ID with a partial patch of properties.
@@ -617,6 +714,25 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           >
             Next →
           </button>
+        </div>
+        <div className="save-section">
+          <button
+            className="save-button"
+            onClick={handleSave}
+            disabled={isSaving || isLoadingAnnotations || !vcAnnotations}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          {saveStatus.type && (
+            <span className={`save-status ${saveStatus.type}`}>
+              {saveStatus.message}
+            </span>
+          )}
+          {annotationsError && (
+            <span className="save-status error">
+              Error: {annotationsError.message}
+            </span>
+          )}
         </div>
       </div>
 
