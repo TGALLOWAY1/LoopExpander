@@ -6,7 +6,8 @@ import { useProject } from '../context/ProjectContext';
 import { FiveLayerRegionMap } from '../components/FiveLayerRegionMap';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
-import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
+// MotifSensitivityPanel removed from right sidebar - will be moved to lane headers
+// import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
 import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions, reanalyzeMotifs } from '../api/reference';
 import { useCallResponseLanes } from '../hooks/useCallResponseLanes';
 import type { CallResponsePair } from '../api/reference';
@@ -336,17 +337,6 @@ function RegionMapPage(): JSX.Element {
 
           {/* Right Panel Section */}
           <div className="call-response-section">
-            <MotifSensitivityPanel
-              referenceId={referenceId}
-              onReanalyze={handleReanalyze}
-              onDataRefetch={(data) => {
-                // Update all state with refetched data
-                setMotifs(data.motifs.instances, data.motifs.groups);
-                setCallResponsePairs(data.callResponse.pairs);
-                setFills(data.fills.fills);
-                setSubregions(data.subregions.regions);
-              }}
-            />
             <MotifGroupsPanel
               groups={motifGroups}
               instances={motifs}

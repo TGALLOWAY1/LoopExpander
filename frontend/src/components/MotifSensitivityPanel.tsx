@@ -1,5 +1,8 @@
 /**
  * MotifSensitivityPanel component for adjusting per-stem motif sensitivity.
+ * 
+ * TODO: This panel is deprecated as a global sidebar; see lane-level sensitivity controls.
+ * The component logic will be re-used in lane headers for per-lane sensitivity adjustment.
  */
 import { useState, useEffect } from 'react';
 import { useMotifSensitivity } from '../hooks/useMotifSensitivity';
