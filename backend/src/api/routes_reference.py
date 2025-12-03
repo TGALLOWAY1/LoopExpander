@@ -22,6 +22,8 @@ from analysis.motif_detector.motif_detector import (
 )
 from analysis.motif_detector.config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
+from analysis.call_response_detector.lanes_service import build_call_response_lanes
+from analysis.call_response_detector.lanes_models import CallResponseByStemResponse
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
 from analysis.subregions.models import RegionSubRegionsDTO
@@ -677,6 +679,74 @@ async def get_call_response(reference_id: str):
         "pairs": pairs_dict,
         "count": len(pairs_dict)
     }
+
+
+@router.get("/{reference_id}/call-response-by-stem", response_model=CallResponseByStemResponse)
+async def get_call_response_by_stem(reference_id: str):
+    """
+    Get call-response patterns organized by stem lanes.
+    
+    This endpoint returns call/response events organized per stem category,
+    excluding full-mix motifs. Events are converted to bar-based coordinates
+    for timeline visualization.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        CallResponseByStemResponse with lanes organized by stem
+    """
+    logger.info(f"Getting call-response by stem for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Check if regions have been detected
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    
+    # Check if call-response pairs have been detected
+    if reference_id not in REFERENCE_CALL_RESPONSE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Call-response pairs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    call_response_pairs = REFERENCE_CALL_RESPONSE[reference_id]
+    
+    # Get motif instances if available (for getting end times)
+    motif_instances = None
+    if reference_id in REFERENCE_MOTIF_INSTANCES_RAW:
+        motif_instances = REFERENCE_MOTIF_INSTANCES_RAW[reference_id]
+    
+    # Build lanes
+    try:
+        lanes_response = build_call_response_lanes(
+            reference_id=reference_id,
+            regions=regions,
+            call_response_pairs=call_response_pairs,
+            bpm=bundle.bpm,
+            motif_instances=motif_instances
+        )
+        
+        return lanes_response
+    except Exception as e:
+        logger.error(f"Error building call-response lanes for reference {reference_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to build call-response lanes: {str(e)}"
+        )
 
 
 @router.get("/{reference_id}/fills")
