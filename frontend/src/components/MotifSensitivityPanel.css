@@ -1,0 +1,165 @@
+/**
+ * Styles for MotifSensitivityPanel component.
+ */
+.motif-sensitivity-panel {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.motif-sensitivity-panel h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: #333;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.motif-sensitivity-help {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #f0f7ff;
+  border-left: 3px solid #2196f3;
+  border-radius: 4px;
+}
+
+.motif-sensitivity-help p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.4;
+}
+
+.motif-sensitivity-empty,
+.motif-sensitivity-loading,
+.motif-sensitivity-error {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.motif-sensitivity-error {
+  color: #d32f2f;
+}
+
+.motif-sensitivity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.motif-sensitivity-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.motif-sensitivity-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.motif-sensitivity-label {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #333;
+  text-transform: capitalize;
+}
+
+.motif-sensitivity-value {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #2196f3;
+  min-width: 3rem;
+  text-align: right;
+}
+
+.motif-sensitivity-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e0e0e0;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.motif-sensitivity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196f3;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.motif-sensitivity-slider::-webkit-slider-thumb:hover {
+  background: #1976d2;
+}
+
+.motif-sensitivity-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196f3;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s;
+}
+
+.motif-sensitivity-slider::-moz-range-thumb:hover {
+  background: #1976d2;
+}
+
+.motif-sensitivity-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #666;
+  padding: 0 0.25rem;
+}
+
+.motif-sensitivity-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.motif-sensitivity-apply-button {
+  padding: 0.75rem 1.5rem;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.motif-sensitivity-apply-button:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+.motif-sensitivity-apply-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.motif-sensitivity-error-message {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #ffebee;
+  border-left: 3px solid #d32f2f;
+  border-radius: 4px;
+  color: #d32f2f;
+  font-size: 0.85rem;
+}
+

@@ -6,7 +6,8 @@ import { useProject } from '../context/ProjectContext';
 import { RegionBlock } from '../components/RegionBlock';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
-import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions } from '../api/reference';
+import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
+import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions, reanalyzeMotifs } from '../api/reference';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
 
@@ -145,6 +146,66 @@ function RegionMapPage(): JSX.Element {
       setHighlightedGroupId(toMotif?.groupId || fromMotif?.groupId || null);
     }
   }, [motifs]);
+
+  // Handle reanalysis after sensitivity change
+  const handleReanalyze = useCallback(async () => {
+    if (!referenceId) return;
+
+    try {
+      setError(null);
+      
+      // Re-analyze motifs with new sensitivity (uses stored config)
+      await reanalyzeMotifs(referenceId);
+      
+      // Refetch all dependent data
+      // Refetch motifs without sensitivity param to use stored config
+      setLoadingMotifs(true);
+      try {
+        const motifsResponse = await getMotifs(referenceId); // No sensitivity param = uses stored config
+        setMotifs(motifsResponse.instances, motifsResponse.groups);
+      } catch (err) {
+        console.error('Error loading motifs after reanalysis:', err);
+      } finally {
+        setLoadingMotifs(false);
+      }
+      
+      // Refetch call-response pairs
+      setLoadingCallResponse(true);
+      try {
+        const callResponseResponse = await getCallResponse(referenceId);
+        setCallResponsePairs(callResponseResponse.pairs);
+      } catch (err) {
+        console.error('Error loading call-response after reanalysis:', err);
+      } finally {
+        setLoadingCallResponse(false);
+      }
+      
+      // Refetch fills
+      setLoadingFills(true);
+      try {
+        const fillsResponse = await getFills(referenceId);
+        setFills(fillsResponse.fills);
+      } catch (err) {
+        console.error('Error loading fills after reanalysis:', err);
+      } finally {
+        setLoadingFills(false);
+      }
+      
+      // Refetch subregions
+      setLoadingSubregions(true);
+      try {
+        const subregionsResponse = await fetchReferenceSubregions(referenceId);
+        setSubregions(subregionsResponse.regions);
+      } catch (err) {
+        console.error('Error loading subregions after reanalysis:', err);
+      } finally {
+        setLoadingSubregions(false);
+      }
+    } catch (err) {
+      console.error('Error during reanalysis:', err);
+      setError(err instanceof Error ? err.message : 'Failed to reanalyze');
+    }
+  }, [referenceId, setMotifs, setCallResponsePairs, setFills, setSubregions]);
 
   // Compute total duration from the last region's end time
   const totalDuration = regions.length > 0
@@ -305,6 +366,10 @@ function RegionMapPage(): JSX.Element {
 
           {/* Right Panel Section */}
           <div className="call-response-section">
+            <MotifSensitivityPanel
+              referenceId={referenceId}
+              onReanalyze={handleReanalyze}
+            />
             <MotifGroupsPanel
               groups={motifGroups}
               instances={motifs}
