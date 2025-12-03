@@ -10,14 +10,31 @@ import {
   getVisualComposerAnnotations,
   saveVisualComposerAnnotations,
   type VcAnnotations,
+  type VcRegionAnnotations,
 } from '../api/visualComposerApi';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /**
+ * Region metadata for demo mode initialization.
+ */
+export interface RegionMeta {
+  id: string;
+  name: string;
+  type: string;
+  start: number;
+  end: number;
+  startBar?: number;
+  endBar?: number;
+  displayOrder?: number;
+}
+
+/**
  * Hook to load and save Visual Composer annotations for a project.
  * 
  * @param projectId - ID of the project (can be null/undefined to disable loading)
+ * @param demoMode - If true, skip API calls and use initialRegions
+ * @param initialRegions - Regions to use in demo mode (ignored if demoMode is false)
  * @returns Object with:
  *   - annotations: Current annotations data (null while loading or if error)
  *   - setAnnotations: Function to update annotations locally (marks as dirty)
@@ -29,7 +46,11 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
  *   - isDirty: Whether annotations have unsaved changes
  *   - forceSave: Function to force an immediate save (for region navigation)
  */
-export function useVisualComposerAnnotations(projectId: string | null | undefined) {
+export function useVisualComposerAnnotations(
+  projectId: string | null | undefined,
+  demoMode: boolean = false,
+  initialRegions?: RegionMeta[] | null
+) {
   const [annotations, setAnnotations] = useState<VcAnnotations | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -44,7 +65,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
   // Ref to track the last saved annotations (for dirty detection)
   const lastSavedAnnotationsRef = useRef<VcAnnotations | null>(null);
 
-  // Load annotations on mount or when projectId changes
+  // Load annotations on mount or when projectId/demoMode/initialRegions change
   useEffect(() => {
     if (!projectId) {
       setAnnotations(null);
@@ -53,6 +74,33 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
       setLoadError(null);
       setIsDirty(false);
       lastSavedAnnotationsRef.current = null;
+      return;
+    }
+
+    // In demo mode, construct annotations from initialRegions without calling API
+    if (demoMode && initialRegions && initialRegions.length > 0) {
+      const demoAnnotations: VcAnnotations = {
+        projectId,
+        regions: initialRegions.map((region): VcRegionAnnotations => ({
+          regionId: region.id,
+          regionName: region.name,
+          notes: null,
+          startBar: region.startBar ?? null,
+          endBar: region.endBar ?? null,
+          regionType: region.type,
+          displayOrder: region.displayOrder ?? null,
+          lanes: [],
+          blocks: [],
+        })),
+      };
+      
+      setAnnotations(demoAnnotations);
+      setError(null);
+      setLoadError(null);
+      setIsLoading(false);
+      setIsDirty(false);
+      lastSavedAnnotationsRef.current = JSON.parse(JSON.stringify(demoAnnotations));
+      setSaveStatus('idle');
       return;
     }
 
@@ -110,7 +158,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, demoMode, initialRegions]); // Include demoMode and initialRegions in deps
 
   // Expose loadAnnotations for retry functionality
   const loadAnnotations = useCallback(async () => {
@@ -166,8 +214,10 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
   }, [projectId]);
 
   // Internal save function (shared by autosave and manual save)
+  // Use functional setState to avoid dependency on annotations
   const performSave = useCallback(async (): Promise<void> => {
-    if (!projectId || !annotations) {
+    if (!projectId || demoMode) {
+      // Skip save in demo mode
       return;
     }
 
@@ -176,7 +226,18 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
     setError(null);
 
     try {
-      const saved = await saveVisualComposerAnnotations(projectId, annotations);
+      // Use functional update to get latest annotations
+      let currentAnnotations: VcAnnotations | null = null;
+      setAnnotations(prev => {
+        currentAnnotations = prev;
+        return prev;
+      });
+
+      if (!currentAnnotations) {
+        throw new Error('No annotations to save');
+      }
+
+      const saved = await saveVisualComposerAnnotations(projectId, currentAnnotations);
       setAnnotations(saved);
       lastSavedAnnotationsRef.current = JSON.parse(JSON.stringify(saved)); // Deep copy
       setIsDirty(false);
@@ -194,7 +255,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, annotations]);
+  }, [projectId, demoMode]); // Removed annotations dependency, use functional update instead
 
   // Manual save function (explicit save button)
   const saveAnnotations = useCallback(async () => {
@@ -215,6 +276,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
   }, [isDirty, performSave]);
 
   // Wrapper for setAnnotations that marks as dirty and triggers autosave
+  // Use functional setState to avoid dependency on annotations
   const setAnnotationsWithAutosave = useCallback((newAnnotations: VcAnnotations | null | ((prev: VcAnnotations | null) => VcAnnotations | null)) => {
     setAnnotations(prev => {
       const next = typeof newAnnotations === 'function' ? newAnnotations(prev) : newAnnotations;
@@ -231,15 +293,21 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
             clearTimeout(autosaveTimeoutRef.current);
           }
           
-          // Set new autosave timeout (1.5 seconds)
-          autosaveTimeoutRef.current = setTimeout(() => {
-            if (projectId && next) {
-              performSave().catch(err => {
-                console.error('Autosave failed:', err);
+          // Set new autosave timeout (1.5 seconds) - skip autosave in demo mode
+          if (!demoMode && projectId && next) {
+            autosaveTimeoutRef.current = setTimeout(() => {
+              // Use functional update to get latest annotations
+              setAnnotations(current => {
+                if (current && projectId) {
+                  performSave().catch(err => {
+                    console.error('Autosave failed:', err);
+                  });
+                }
+                return current;
               });
-            }
-            autosaveTimeoutRef.current = null;
-          }, 1500);
+              autosaveTimeoutRef.current = null;
+            }, 1500);
+          }
         }
       } else if (next && !lastSavedAnnotationsRef.current) {
         // First time setting annotations (after load), mark as dirty if different from loaded
@@ -248,7 +316,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
       
       return next;
     });
-  }, [projectId, performSave]);
+  }, [projectId, demoMode]); // Removed performSave dependency, use functional update instead
 
   // Cleanup autosave timeout on unmount
   useEffect(() => {

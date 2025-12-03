@@ -54,6 +54,7 @@ import './VisualComposerPage.css';
 
 interface VisualComposerPageProps {
   onBack: () => void;
+  demoMode?: boolean;
 }
 
 // Helper functions to convert between Vc types and Annotation types (for component compatibility)
@@ -135,11 +136,65 @@ function regionAnnotationsToVcRegion(
   };
 }
 
-function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
+function VisualComposerPage({ onBack, demoMode = false }: VisualComposerPageProps): JSX.Element {
   const { 
     referenceId, 
     regions,
   } = useProject();
+
+  // Create demo regions if in demo mode
+  const demoRegions = useMemo(() => {
+    if (!demoMode) return null;
+    
+    return [
+      {
+        id: 'demo-intro',
+        name: 'Intro',
+        type: 'low_energy',
+        start: 0.0,
+        end: 9.0,
+        duration: 9.0,
+        motifs: [],
+        fills: [],
+        callResponse: [],
+        startBar: 0.0,
+        endBar: 9.0,
+        displayOrder: 0,
+      },
+      {
+        id: 'demo-build',
+        name: 'Build',
+        type: 'build',
+        start: 9.0,
+        end: 17.0,
+        duration: 8.0,
+        motifs: [],
+        fills: [],
+        callResponse: [],
+        startBar: 9.0,
+        endBar: 17.0,
+        displayOrder: 1,
+      },
+      {
+        id: 'demo-drop',
+        name: 'Drop',
+        type: 'high_energy',
+        start: 17.0,
+        end: 33.0,
+        duration: 16.0,
+        motifs: [],
+        fills: [],
+        callResponse: [],
+        startBar: 17.0,
+        endBar: 33.0,
+        displayOrder: 2,
+      },
+    ];
+  }, [demoMode]);
+
+  // Use demo projectId/referenceId in demo mode
+  const projectId = demoMode ? 'demo-project' : (referenceId || null);
+  const effectiveRegions = demoMode ? (demoRegions || []) : regions;
 
   // Use the new Visual Composer annotations hook
   // Use referenceId as projectId (they're the same in this context)
@@ -155,13 +210,13 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     isDirty,
     forceSave,
     retryLoad,
-  } = useVisualComposerAnnotations(referenceId || null);
+  } = useVisualComposerAnnotations(projectId, demoMode, demoRegions);
 
   // Build ordered region list from annotations (if available) or fallback to regions from context
   // Annotations have displayOrder and bar ranges, so prefer that for ordering
   const orderedRegions = useMemo(() => {
-    if (!vcAnnotations || !regions || regions.length === 0) {
-      return regions || [];
+    if (!vcAnnotations || !effectiveRegions || effectiveRegions.length === 0) {
+      return effectiveRegions || [];
     }
     
     // Create a map of region annotations by regionId
@@ -171,7 +226,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     });
     
     // Build ordered list: use annotations displayOrder if available, otherwise use region order
-    const regionList = regions.map(region => {
+    const regionList = effectiveRegions.map(region => {
       const regionAnn = annotationsByRegionId.get(region.id);
       return {
         ...region,
@@ -190,7 +245,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       if (b.displayOrder !== null) return 1;
       return 0; // Keep original order if no displayOrder
     });
-  }, [vcAnnotations, regions]);
+  }, [vcAnnotations, effectiveRegions]);
 
   // Initialize currentRegionIndex from URL params if available (for future router integration)
   // For now, default to 0
@@ -350,24 +405,46 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       
       // Also ensure it's added to Vc annotations with region metadata
       const newVcRegion = regionAnnotationsToVcRegion(emptyRegionAnnotations, currentRegion);
-      setVcAnnotations({
-        ...vcAnnotations,
-        regions: [...vcAnnotations.regions, newVcRegion],
+      // Use functional update to avoid dependency on vcAnnotations
+      setVcAnnotations(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          regions: [...prev.regions, newVcRegion],
+        };
       });
     }
     // If vcAnnotations is null/undefined, wait for it to load
-  }, [regionId, currentRegion, vcAnnotations]); // Keep vcAnnotations to sync on initial load
+  }, [regionId, currentRegion, vcAnnotations, setVcAnnotations]); // Keep vcAnnotations to sync on initial load
 
   // Update Vc annotations whenever localRegionAnnotations changes (but not when syncing from global)
   // This effect should NOT depend on vcAnnotations to avoid circular updates
+  // Use a ref to track if we've already updated for this regionId to prevent loops
+  const lastUpdatedRegionIdRef = useRef<string | undefined>(undefined);
+  const lastUpdatedLocalRef = useRef<string>('');
+  
   useEffect(() => {
-    if (localRegionAnnotations.regionId && !isSyncingFromGlobalRef.current && vcAnnotations) {
-      // Only update if the regionId matches (prevent updating wrong region)
-      if (localRegionAnnotations.regionId === regionId) {
-        updateVcAnnotations(localRegionAnnotations);
-      }
+    if (!localRegionAnnotations.regionId || isSyncingFromGlobalRef.current) {
+      return;
     }
-  }, [localRegionAnnotations, regionId, updateVcAnnotations]); // Removed vcAnnotations from deps
+    
+    // Only update if the regionId matches and we haven't already updated this exact state
+    if (localRegionAnnotations.regionId === regionId) {
+      const currentLocalJson = JSON.stringify(localRegionAnnotations);
+      
+      // Skip if we've already updated for this exact localRegionAnnotations state
+      if (lastUpdatedRegionIdRef.current === regionId && lastUpdatedLocalRef.current === currentLocalJson) {
+        return;
+      }
+      
+      // Update the refs before calling updateVcAnnotations
+      lastUpdatedRegionIdRef.current = regionId;
+      lastUpdatedLocalRef.current = currentLocalJson;
+      
+      // Call updateVcAnnotations directly - it uses functional setState internally
+      updateVcAnnotations(localRegionAnnotations);
+    }
+  }, [localRegionAnnotations, regionId, updateVcAnnotations]); // Removed vcAnnotations and setVcAnnotations from deps
 
   // Handle manual save button click
   const handleSave = useCallback(async () => {
@@ -403,14 +480,19 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       };
       setVcAnnotations(newVcAnnotations);
     } else {
-      const regionExists = vcAnnotations.regions.some(r => r.regionId === regionId);
-      if (!regionExists) {
-        const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
-        setVcAnnotations({
-          ...vcAnnotations,
-          regions: [...vcAnnotations.regions, newRegion],
-        });
-      }
+      // Use functional update to check if region exists
+      setVcAnnotations(prev => {
+        if (!prev) return prev;
+        const regionExists = prev.regions.some(r => r.regionId === regionId);
+        if (!regionExists) {
+          const newRegion = regionAnnotationsToVcRegion(localRegionAnnotations, currentRegion || null);
+          return {
+            ...prev,
+            regions: [...prev.regions, newRegion],
+          };
+        }
+        return prev;
+      });
     }
 
     const lanes = localRegionAnnotations.lanes || [];
@@ -822,7 +904,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   }, [currentRegionIndex, orderedRegions.length, isDirty, forceSave]);
 
   // Validation
-  if (!referenceId || orderedRegions.length === 0) {
+  if (!demoMode && (!referenceId || orderedRegions.length === 0)) {
     return (
       <div className="visual-composer-page">
         <div className="visual-composer-empty">

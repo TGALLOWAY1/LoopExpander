@@ -13,7 +13,7 @@ type AppView = 'ingest' | 'regionMap' | 'visualComposer';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
-  const [view, setView] = useState<AppView>('ingest');
+  const [view, setView] = useState<AppView>('visualComposer'); // Default to Visual Composer in dev
 
   return (
     <div className="app">
@@ -37,7 +37,7 @@ function App(): JSX.Element {
           >
             Region Map
           </button>
-          {VISUAL_COMPOSER_ENABLED && referenceId && regions.length > 0 && (
+          {VISUAL_COMPOSER_ENABLED && (
             <button
               className="dev-button"
               style={{ margin: '12px', padding: '8px 12px' }}
@@ -56,7 +56,10 @@ function App(): JSX.Element {
           </>
         )}
         {view === 'visualComposer' && (
-          <VisualComposerPage onBack={() => setView('regionMap')} />
+          <VisualComposerPage 
+            onBack={() => setView('regionMap')} 
+            demoMode={!referenceId || regions.length === 0}
+          />
         )}
       </main>
     </div>
