@@ -104,10 +104,15 @@ def build_call_response_lanes(
     events_by_stem: Dict[StemCategory, List[StemCallResponseEvent]] = defaultdict(list)
     
     # Process each call/response pair
+    # NOTE: For the Region Map stem lanes, we use stem-only call/response analysis.
+    # Pairs are now intra-stem only (from_stem_role == to_stem_role) when use_full_mix=False.
     for pair in call_response_pairs:
         # Only process pairs involving valid stems (exclude full_mix)
         if not _is_valid_stem(pair.from_stem_role) and not _is_valid_stem(pair.to_stem_role):
             continue
+        
+        # For intra-stem pairs (from_stem_role == to_stem_role), both call and response
+        # events will be in the same stem lane, which is correct for per-stem visualization.
         
         # Determine region for the pair
         region_id = pair.region_id
