@@ -405,6 +405,35 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     setSelectedBlockId(blockId);
   }, []);
 
+  // Handle block update from timeline
+  const handleUpdateBlock = useCallback((blockId: string, patch: Partial<AnnotationBlock>) => {
+    if (!localRegionAnnotations || !blockId) return;
+
+    // Validate constraints
+    const block = localRegionAnnotations.blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    const barCount = getRegionBars();
+    const updatedPatch: Partial<AnnotationBlock> = { ...patch };
+
+    // Ensure startBar < endBar
+    if ('startBar' in updatedPatch || 'endBar' in updatedPatch) {
+      const newStartBar = updatedPatch.startBar ?? block.startBar;
+      const newEndBar = updatedPatch.endBar ?? block.endBar;
+      
+      if (newEndBar <= newStartBar) {
+        // Don't allow invalid ranges
+        return;
+      }
+
+      // Clamp to valid range [0, barCount]
+      updatedPatch.startBar = Math.max(0, Math.min(newStartBar, barCount));
+      updatedPatch.endBar = Math.max(updatedPatch.startBar! + 1, Math.min(newEndBar, barCount));
+    }
+
+    updateBlock(blockId, updatedPatch);
+  }, [localRegionAnnotations, updateBlock]);
+
   // Handle bar grid click/drag
   const handleBarGridMouseDown = (laneIndex: number, bar: number) => {
     setIsDragging(true);
@@ -565,6 +594,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
               barCount={getRegionBars()}
               onCreateBlock={handleCreateBlock}
               onSelectBlock={handleSelectBlock}
+              onUpdateBlock={handleUpdateBlock}
             />
           </div>
         )}

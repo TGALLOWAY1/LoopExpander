@@ -15,6 +15,7 @@ interface LaneTimelineRowProps {
   barCount: number;
   onCreateBlock: (laneId: string, startBar: number) => void;
   onSelectBlock: (blockId: string) => void;
+  onUpdateBlock: (blockId: string, patch: Partial<AnnotationBlock>) => void;
 }
 
 export const LaneTimelineRow: React.FC<LaneTimelineRowProps> = ({
@@ -23,6 +24,7 @@ export const LaneTimelineRow: React.FC<LaneTimelineRowProps> = ({
   barCount,
   onCreateBlock,
   onSelectBlock,
+  onUpdateBlock,
 }) => {
   const BAR_WIDTH = 40; // pixels per bar
 
@@ -77,7 +79,10 @@ export const LaneTimelineRow: React.FC<LaneTimelineRowProps> = ({
               key={block.id}
               block={block}
               barWidth={BAR_WIDTH}
+              barCount={barCount}
+              laneColor={lane.color}
               onClick={onSelectBlock}
+              onUpdateBlock={onUpdateBlock}
             />
           ))}
         </div>

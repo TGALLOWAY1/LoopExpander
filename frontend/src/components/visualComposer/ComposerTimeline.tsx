@@ -14,6 +14,7 @@ interface ComposerTimelineProps {
   barCount: number;
   onCreateBlock: (laneId: string, startBar: number) => void;
   onSelectBlock: (blockId: string) => void;
+  onUpdateBlock: (blockId: string, patch: Partial<AnnotationBlock>) => void;
 }
 
 export const ComposerTimeline: React.FC<ComposerTimelineProps> = ({
@@ -21,6 +22,7 @@ export const ComposerTimeline: React.FC<ComposerTimelineProps> = ({
   barCount,
   onCreateBlock,
   onSelectBlock,
+  onUpdateBlock,
 }) => {
   // Sort lanes by order
   const sortedLanes = useMemo(() => {
@@ -77,6 +79,7 @@ export const ComposerTimeline: React.FC<ComposerTimelineProps> = ({
               barCount={barCount}
               onCreateBlock={onCreateBlock}
               onSelectBlock={onSelectBlock}
+              onUpdateBlock={onUpdateBlock}
             />
           );
         })}
