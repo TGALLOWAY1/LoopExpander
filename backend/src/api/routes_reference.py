@@ -20,7 +20,12 @@ from analysis.region_detector.region_detector import detect_regions
 from analysis.motif_detector.motif_detector import (
     detect_motifs, MotifInstance, _cluster_motifs, _align_motifs_with_regions
 )
-from analysis.motif_detector.config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
+from analysis.motif_detector.config import (
+    MotifSensitivityConfig,
+    DEFAULT_MOTIF_SENSITIVITY,
+    normalize_sensitivity_config,
+    clamp_sensitivity
+)
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 from analysis.call_response_detector.lanes_service import build_call_response_lanes
 from analysis.call_response_detector.lanes_models import CallResponseByStemResponse
@@ -539,16 +544,31 @@ async def update_motif_sensitivity(
     # Validate and merge provided values
     update_dict = update.model_dump(exclude_unset=True)
     
-    # Validate each value is in range [0.0, 1.0] (Pydantic Field already does this, but double-check)
+    # Clamp values to safe range [0.05, 0.95] even if they're in valid [0.0, 1.0] range
+    # This prevents extreme values that could lead to no motifs being detected
+    clamped_dict = {}
     for key, value in update_dict.items():
-        if value is not None and (value < 0.0 or value > 1.0):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid sensitivity value for {key}: {value}. Must be between 0.0 and 1.0"
-            )
+        if value is not None:
+            # Validate value is in range [0.0, 1.0] (Pydantic Field already does this, but double-check)
+            if value < 0.0 or value > 1.0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid sensitivity value for {key}: {value}. Must be between 0.0 and 1.0"
+                )
+            # Clamp to safe range [0.05, 0.95]
+            clamped_value = clamp_sensitivity(value)
+            if clamped_value != value:
+                logger.info(
+                    f"[MotifSensitivity] Clamped {key} sensitivity from {value} to {clamped_value} "
+                    "(extreme values can prevent motif detection)"
+                )
+            clamped_dict[key] = clamped_value
     
     # Merge provided keys into existing config
-    bundle.motif_sensitivity_config.update(update_dict)
+    bundle.motif_sensitivity_config.update(clamped_dict)
+    
+    # Normalize the entire config to ensure all values are in safe range
+    bundle.motif_sensitivity_config = normalize_sensitivity_config(bundle.motif_sensitivity_config)
     
     logger.info(f"Updated motif sensitivity config for {reference_id}: {bundle.motif_sensitivity_config}")
     

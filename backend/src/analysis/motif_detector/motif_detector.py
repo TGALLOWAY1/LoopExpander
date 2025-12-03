@@ -28,7 +28,11 @@ from sklearn.preprocessing import StandardScaler
 from models.reference_bundle import ReferenceBundle
 from models.region import Region
 from utils.logger import get_logger
-from .config import MotifSensitivityConfig, DEFAULT_MOTIF_SENSITIVITY
+from .config import (
+    MotifSensitivityConfig,
+    DEFAULT_MOTIF_SENSITIVITY,
+    normalize_sensitivity_config
+)
 
 logger = get_logger(__name__)
 
@@ -358,15 +362,21 @@ def detect_motifs(
         Tuple of (list of MotifInstances, list of MotifGroups)
         Each MotifInstance has stem_role field explicitly set to its source stem category.
     """
-    # Merge sensitivity config with defaults
+    # Merge sensitivity config with defaults and normalize to safe range
     # If sensitivity_config is None, use sensitivity parameter for all stems
     if sensitivity_config is None:
-        config = {**DEFAULT_MOTIF_SENSITIVITY}
-        for stem_key in config.keys():
-            config[stem_key] = sensitivity
+        merged = {**DEFAULT_MOTIF_SENSITIVITY}
+        for stem_key in merged.keys():
+            merged[stem_key] = sensitivity
     else:
         # Merge provided config with defaults (allows partial configs)
-        config = {**DEFAULT_MOTIF_SENSITIVITY, **sensitivity_config}
+        merged = {**DEFAULT_MOTIF_SENSITIVITY, **sensitivity_config}
+    
+    # Normalize config to clamp values to safe range [0.05, 0.95]
+    # This prevents extreme values that could lead to no motifs being detected
+    config = normalize_sensitivity_config(merged)
+    
+    logger.info("[Motifs] Using sensitivity config: %s", config)
     
     t0 = time.time()
     logger.info("Motif detection started", extra={"sensitivity_config": config, "window_bars": window_bars, "hop_bars": hop_bars})
