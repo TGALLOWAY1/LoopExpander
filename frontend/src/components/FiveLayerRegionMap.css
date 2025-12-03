@@ -123,6 +123,9 @@
   color: #333;
   padding-right: 1rem;
   border-right: 1px solid #e0e0e0;
+  position: relative;
+  z-index: 1;
+  background-color: white;
 }
 
 .five-layer-content {
@@ -132,6 +135,7 @@
   background-color: #f9f9f9;
   border-radius: 4px;
   padding: 4px;
+  z-index: 0;
 }
 
 /* Region lane */
