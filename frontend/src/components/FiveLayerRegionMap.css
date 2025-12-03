@@ -249,6 +249,19 @@
   pointer-events: none;
 }
 
+/* Empty state for stem lanes */
+.stem-lane-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 40px;
+  color: #999;
+  font-size: 0.85rem;
+  font-style: italic;
+  padding: 0.5rem;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .five-layer-label {

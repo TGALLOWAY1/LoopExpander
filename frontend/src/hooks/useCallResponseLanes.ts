@@ -59,6 +59,20 @@ export function useCallResponseLanes(referenceId: string | null) {
     };
   }, [referenceId]);
 
+  // Debug logging: Log lane data when it changes
+  React.useEffect(() => {
+    if (data) {
+      console.log("[DEBUG] Call/Response lanes:", data);
+      console.log("[DEBUG] Number of lanes:", data.lanes.length);
+      data.lanes.forEach((lane) => {
+        console.log(`[DEBUG] Lane ${lane.stem}: ${lane.events.length} events`);
+        if (lane.events.length > 0) {
+          console.log(`[DEBUG] Sample event from ${lane.stem}:`, lane.events[0]);
+        }
+      });
+    }
+  }, [data]);
+
   return { data, loading, error };
 }
 

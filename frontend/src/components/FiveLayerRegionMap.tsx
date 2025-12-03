@@ -275,6 +275,11 @@ export function FiveLayerRegionMap({
               />
             </div>
             <div className={`five-layer-content five-layer-stem-lane ${isFocused ? 'five-layer-stem-lane--focused' : ''} ${isDimmed ? 'five-layer-stem-lane--dimmed' : ''}`}>
+              {lane.events.length === 0 && (
+                <div className="stem-lane-empty">
+                  No call/response detected for this stem.
+                </div>
+              )}
               {lane.events.map((event) => {
                 const leftPercent = barToPercent(event.startBar);
                 const widthPercent = barWidthPercent(event.startBar, event.endBar);
@@ -319,6 +324,25 @@ export function FiveLayerRegionMap({
           </div>
         );
       })}
+
+      {/* Debug panel (development only) */}
+      {process.env.NODE_ENV === 'development' && lanes && (
+        <div className="debug-lanes-panel" style={{
+          marginTop: '2rem',
+          padding: '1rem',
+          backgroundColor: '#f5f5f5',
+          border: '1px solid #ddd',
+          borderRadius: '4px',
+          fontSize: '0.8rem',
+          maxHeight: '400px',
+          overflow: 'auto'
+        }}>
+          <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Debug: Call/Response Lanes Data</h3>
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {JSON.stringify(lanes, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
