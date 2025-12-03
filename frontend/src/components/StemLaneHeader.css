@@ -23,6 +23,13 @@
   flex-shrink: 0;
 }
 
+.stem-lane-sensitivity-value-inline {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: #888;
+  margin-left: 0.25rem;
+}
+
 .stem-lane-chevron {
   background: none;
   border: none;
