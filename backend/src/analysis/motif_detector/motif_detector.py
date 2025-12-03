@@ -334,10 +334,14 @@ def detect_motifs(
     sensitivity: float = 0.5,
     sensitivity_config: Optional[MotifSensitivityConfig] = None,
     window_bars: float = DEFAULT_MOTIF_BARS,
-    hop_bars: float = DEFAULT_MOTIF_HOP_BARS
+    hop_bars: float = DEFAULT_MOTIF_HOP_BARS,
+    exclude_full_mix: bool = False
 ) -> Tuple[List[MotifInstance], List[MotifGroup]]:
     """
     Detect motifs in a reference bundle.
+    
+    NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+    Each motif instance is explicitly tagged with its stem_role ("drums", "bass", "vocals", "instruments").
     
     Args:
         reference_bundle: ReferenceBundle with loaded audio files
@@ -348,9 +352,11 @@ def detect_motifs(
                           LOWER sensitivity = stricter grouping (tighter clustering, more groups)
         window_bars: Window length in bars for segmentation
         hop_bars: Hop size in bars for segmentation
+        exclude_full_mix: If True, skip full_mix processing (for stem-only analysis)
     
     Returns:
         Tuple of (list of MotifInstances, list of MotifGroups)
+        Each MotifInstance has stem_role field explicitly set to its source stem category.
     """
     # Merge sensitivity config with defaults
     # If sensitivity_config is None, use sensitivity parameter for all stems
@@ -366,13 +372,18 @@ def detect_motifs(
     logger.info("Motif detection started", extra={"sensitivity_config": config, "window_bars": window_bars, "hop_bars": hop_bars})
     
     # Debug: Log available audio sources
+    # NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
     stems_dict = {
         "drums": reference_bundle.drums,
         "bass": reference_bundle.bass,
         "vocals": reference_bundle.vocals,
         "instruments": reference_bundle.instruments,
-        "full_mix": reference_bundle.full_mix
     }
+    
+    # Only include full_mix if not excluded (for backward compatibility with other analysis paths)
+    if not exclude_full_mix:
+        stems_dict["full_mix"] = reference_bundle.full_mix
+    
     stems_available = [stem_role for stem_role, audio_file in stems_dict.items() if audio_file is not None]
     
     logger.info(
@@ -380,6 +391,7 @@ def detect_motifs(
         extra={
             "stems_available": stems_available,
             "has_full_mix": reference_bundle.full_mix is not None,
+            "exclude_full_mix": exclude_full_mix,
             "total_stems": len(stems_available),
             "stem_roles": list(stems_dict.keys())
         }

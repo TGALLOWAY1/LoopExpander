@@ -241,14 +241,16 @@ async def analyze_reference(
         # Detect motifs using stored sensitivity config
         # The query parameter is kept for backward compatibility but we prefer stored config
         # If query param differs from default, it overrides stored config
+        # NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+        # Each motif instance is explicitly tagged with its stem_role for per-stem lane visualization.
         if motif_sensitivity != DEFAULT_MOTIF_SENSITIVITY:
             # Query parameter provided and differs from default, use it for all stems
             logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity={motif_sensitivity} (from query param, overriding stored config)")
-            instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity)
+            instances, groups = detect_motifs(bundle, regions, sensitivity=motif_sensitivity, exclude_full_mix=True)
         else:
             # Use stored per-stem sensitivity config
             logger.info(f"Detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
-            instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config)
+            instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config, exclude_full_mix=True)
         
         # Store raw instances (before clustering) for re-clustering with different sensitivity
         # Create deep copies to avoid modifying the clustered instances
@@ -592,7 +594,8 @@ async def reanalyze_motifs(reference_id: str):
     try:
         # Detect motifs using stored sensitivity config
         logger.info(f"Re-detecting motifs for bundle: {bundle} with sensitivity_config={bundle.motif_sensitivity_config}")
-        instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config)
+        # NOTE: For the Region Map stem lanes, we use stem-only motif analysis (no full-mix motifs).
+        instances, groups = detect_motifs(bundle, regions, sensitivity_config=bundle.motif_sensitivity_config, exclude_full_mix=True)
         
         # Store raw instances (before clustering) for re-clustering with different sensitivity
         raw_instances = []
