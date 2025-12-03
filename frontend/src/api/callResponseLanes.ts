@@ -31,6 +31,29 @@ export async function fetchCallResponseByStem(
     throw new Error(error.detail || `Failed to fetch call/response lanes with status ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // Transform snake_case to camelCase for frontend types
+  // Backend returns snake_case (region_id, start_bar, etc.) but frontend expects camelCase
+  const transformed = {
+    referenceId: data.reference_id || data.referenceId,
+    regions: data.regions || [],
+    lanes: (data.lanes || []).map((lane: any) => ({
+      stem: lane.stem,
+      events: (lane.events || []).map((event: any) => ({
+        id: event.id,
+        regionId: event.region_id || event.regionId,
+        stem: event.stem,
+        startBar: event.start_bar || event.startBar,
+        endBar: event.end_bar || event.endBar,
+        role: event.role,
+        groupId: event.group_id || event.groupId,
+        label: event.label,
+        intensity: event.intensity,
+      })),
+    })),
+  };
+  
+  return transformed as CallResponseByStemResponse;
 }
 
