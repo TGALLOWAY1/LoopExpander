@@ -6,7 +6,7 @@ import { useProject } from '../context/ProjectContext';
 import { RegionBlock } from '../components/RegionBlock';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
-import { getMotifs, getCallResponse, getFills } from '../api/reference';
+import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions } from '../api/reference';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
 
@@ -18,14 +18,17 @@ function RegionMapPage(): JSX.Element {
     motifGroups,
     callResponsePairs,
     fills,
+    subregionsByRegionId,
     setMotifs, 
     setCallResponsePairs, 
-    setFills 
+    setFills,
+    setSubregions
   } = useProject();
   
   const [loadingMotifs, setLoadingMotifs] = useState(false);
   const [loadingCallResponse, setLoadingCallResponse] = useState(false);
   const [loadingFills, setLoadingFills] = useState(false);
+  const [loadingSubregions, setLoadingSubregions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [motifSensitivity, setMotifSensitivity] = useState(0.5);
   const [isMotifPaused, setIsMotifPaused] = useState(false);
@@ -98,6 +101,29 @@ function RegionMapPage(): JSX.Element {
 
     loadCallResponse();
     loadFills();
+
+    // Fetch subregions
+    const loadSubregions = async () => {
+      setLoadingSubregions(true);
+      try {
+        const response = await fetchReferenceSubregions(referenceId);
+        setSubregions(response.regions);
+        
+        // Log subregions to verify shape
+        console.log('Subregions', response.regions);
+        if (response.regions.length > 0) {
+          const firstRegionLanes = response.regions[0]?.lanes;
+          console.log('First region lanes:', firstRegionLanes);
+        }
+      } catch (err) {
+        console.error('Error loading subregions:', err);
+        // Don't set error for subregions, just log it
+      } finally {
+        setLoadingSubregions(false);
+      }
+    };
+
+    loadSubregions();
     // Only depend on input values, not on the results or setter functions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceId, regions.length, motifSensitivity, isMotifPaused]);
@@ -156,7 +182,7 @@ function RegionMapPage(): JSX.Element {
             <span>Reference ID: {referenceId}</span>
             <span>Regions: {regions.length}</span>
             <span>Duration: {totalDuration.toFixed(1)}s</span>
-            {(loadingMotifs || loadingCallResponse || loadingFills) && (
+            {(loadingMotifs || loadingCallResponse || loadingFills || loadingSubregions) && (
               <span className="loading-indicator">Loading analysis data...</span>
             )}
           </div>

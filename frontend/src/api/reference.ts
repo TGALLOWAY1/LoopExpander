@@ -105,6 +105,44 @@ export interface FillsResponse {
 }
 
 /**
+ * Stem category type for subregions.
+ */
+export type StemCategory = 'drums' | 'bass' | 'vocals' | 'instruments';
+
+/**
+ * Subregion pattern type matching backend model.
+ */
+export interface SubRegionPattern {
+  id: string;
+  regionId: string;
+  stemCategory: StemCategory;
+  startBar: number;
+  endBar: number;
+  label?: string | null;
+  motifGroupId?: string | null;
+  isVariation?: boolean;
+  isSilence?: boolean;
+  intensity?: number; // 0–1
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Region subregions type containing lanes per stem category.
+ */
+export interface RegionSubRegions {
+  regionId: string;
+  lanes: Record<StemCategory, SubRegionPattern[]>;
+}
+
+/**
+ * Reference subregions response type.
+ */
+export interface ReferenceSubRegionsResponse {
+  referenceId: string;
+  regions: RegionSubRegions[];
+}
+
+/**
  * Upload reference track stems and full mix.
  * 
  * @param files - Object containing 5 audio files
@@ -290,5 +328,53 @@ export async function getFills(referenceId: string): Promise<FillsResponse> {
   }
 
   return response.json();
+}
+
+/**
+ * Fetch computed subregions for a reference bundle.
+ * 
+ * @param referenceId - ID of the reference bundle
+ * @returns Promise with subregions response containing per-region lane data
+ */
+export async function fetchReferenceSubregions(
+  referenceId: string
+): Promise<ReferenceSubRegionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/subregions`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch subregions' }));
+    throw new Error(error.detail || `Failed to fetch subregions with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Validate and normalize the response structure
+  if (!data.referenceId || !Array.isArray(data.regions)) {
+    throw new Error('Invalid subregions response format');
+  }
+
+  // Ensure all regions have all 4 stem categories in lanes
+  const normalizedRegions: RegionSubRegions[] = data.regions.map((region: RegionSubRegions) => {
+    const lanes: Record<StemCategory, SubRegionPattern[]> = {
+      drums: region.lanes?.drums || [],
+      bass: region.lanes?.bass || [],
+      vocals: region.lanes?.vocals || [],
+      instruments: region.lanes?.instruments || [],
+    };
+    return {
+      regionId: region.regionId,
+      lanes,
+    };
+  });
+
+  return {
+    referenceId: data.referenceId,
+    regions: normalizedRegions,
+  };
 }
 

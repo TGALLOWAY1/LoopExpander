@@ -7,7 +7,8 @@ import {
   MotifInstance, 
   MotifGroup, 
   CallResponsePair, 
-  Fill 
+  Fill,
+  RegionSubRegions
 } from '../api/reference';
 
 /**
@@ -20,11 +21,13 @@ export type ProjectState = {
   motifGroups: MotifGroup[];
   callResponsePairs: CallResponsePair[];
   fills: Fill[];
+  subregionsByRegionId: Record<string, RegionSubRegions>;
   setReferenceId: (id: string | null) => void;
   setRegions: (regions: Region[]) => void;
   setMotifs: (motifs: MotifInstance[], groups: MotifGroup[]) => void;
   setCallResponsePairs: (pairs: CallResponsePair[]) => void;
   setFills: (fills: Fill[]) => void;
+  setSubregions: (subregions: RegionSubRegions[]) => void;
 };
 
 /**
@@ -37,6 +40,7 @@ const defaultState: ProjectState = {
   motifGroups: [],
   callResponsePairs: [],
   fills: [],
+  subregionsByRegionId: {},
   setReferenceId: () => {
     console.warn('setReferenceId called outside ProjectProvider');
   },
@@ -51,6 +55,9 @@ const defaultState: ProjectState = {
   },
   setFills: () => {
     console.warn('setFills called outside ProjectProvider');
+  },
+  setSubregions: () => {
+    console.warn('setSubregions called outside ProjectProvider');
   },
 };
 
@@ -89,10 +96,19 @@ export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element
   const [motifGroups, setMotifGroupsState] = useState<MotifGroup[]>([]);
   const [callResponsePairs, setCallResponsePairs] = useState<CallResponsePair[]>([]);
   const [fills, setFills] = useState<Fill[]>([]);
+  const [subregionsByRegionId, setSubregionsByRegionId] = useState<Record<string, RegionSubRegions>>({});
 
   const setMotifs = (newMotifs: MotifInstance[], newGroups: MotifGroup[]) => {
     setMotifsState(newMotifs);
     setMotifGroupsState(newGroups);
+  };
+
+  const setSubregions = (subregions: RegionSubRegions[]) => {
+    const byRegionId: Record<string, RegionSubRegions> = {};
+    subregions.forEach((subregion) => {
+      byRegionId[subregion.regionId] = subregion;
+    });
+    setSubregionsByRegionId(byRegionId);
   };
 
   const value: ProjectState = {
@@ -102,11 +118,13 @@ export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element
     motifGroups,
     callResponsePairs,
     fills,
+    subregionsByRegionId,
     setReferenceId,
     setRegions,
     setMotifs,
     setCallResponsePairs,
     setFills,
+    setSubregions,
   };
 
   return (
