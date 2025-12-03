@@ -314,6 +314,7 @@ function RegionMapPage(): JSX.Element {
                 lanes={callResponseLanesData?.lanes ?? []}
                 bpm={130} // TODO: Get BPM from context or reference bundle
                 totalDuration={totalDuration}
+                referenceId={referenceId}
               />
             )}
 

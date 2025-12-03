@@ -1,0 +1,92 @@
+/**
+ * Styles for StemLaneHeader component.
+ */
+
+.stem-lane-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.25rem 0;
+}
+
+.stem-lane-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.stem-lane-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  max-width: 200px;
+}
+
+.stem-lane-sensitivity-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #ddd;
+  outline: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.stem-lane-sensitivity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #007bff;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.stem-lane-sensitivity-slider::-webkit-slider-thumb:hover {
+  background: #0056b3;
+}
+
+.stem-lane-sensitivity-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #007bff;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s;
+}
+
+.stem-lane-sensitivity-slider::-moz-range-thumb:hover {
+  background: #0056b3;
+}
+
+.stem-lane-sensitivity-value {
+  font-size: 0.75rem;
+  color: #666;
+  min-width: 35px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .stem-lane-label {
+    min-width: 60px;
+    font-size: 0.8rem;
+  }
+  
+  .stem-lane-slider-container {
+    max-width: 150px;
+  }
+  
+  .stem-lane-sensitivity-value {
+    font-size: 0.7rem;
+    min-width: 30px;
+  }
+}
+

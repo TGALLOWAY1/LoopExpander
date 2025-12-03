@@ -10,6 +10,8 @@
 import React, { useState } from 'react';
 import { Region } from '../api/reference';
 import { StemCallResponseLane, StemCategory } from '../types/callResponseLanes';
+import { useMotifSensitivity } from '../hooks/useMotifSensitivity';
+import { StemLaneHeader } from './StemLaneHeader';
 import './FiveLayerRegionMap.css';
 
 export type FiveLayerRegionMapProps = {
@@ -17,6 +19,7 @@ export type FiveLayerRegionMapProps = {
   lanes: StemCallResponseLane[];
   bpm?: number; // BPM for bar-to-pixel calculations (default: 130)
   totalDuration?: number; // Total duration in seconds (optional, computed from regions if not provided)
+  referenceId?: string | null; // Reference ID for loading sensitivity config
 };
 
 /**
@@ -94,10 +97,22 @@ export function FiveLayerRegionMap({
   lanes,
   bpm = 130,
   totalDuration: providedTotalDuration,
+  referenceId,
 }: FiveLayerRegionMapProps): JSX.Element {
   // State for focused stem mode
   const [focusedStem, setFocusedStem] = useState<StemCategory | 'all'>('all');
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+
+  // Load sensitivity configuration
+  const { config, setConfig } = useMotifSensitivity(referenceId || '');
+
+  // Helper to update sensitivity for a specific stem
+  const updateStemSensitivity = (stem: StemCategory, value: number) => {
+    if (!config) return;
+    const updated = { ...config, [stem]: value };
+    setConfig(updated);
+    // Note: We do NOT auto-save here; saving will be handled by a separate "Apply" button
+  };
 
   // Compute total duration from regions if not provided
   const totalDuration = providedTotalDuration ?? (
@@ -251,7 +266,13 @@ export function FiveLayerRegionMap({
             className={`five-layer-row ${isFocused ? 'five-layer-row--focused' : ''} ${isDimmed ? 'five-layer-row--dimmed' : ''}`}
           >
             <div className={`five-layer-label ${isFocused ? 'five-layer-label--focused' : ''} ${isDimmed ? 'five-layer-label--dimmed' : ''}`}>
-              {stemDisplayName}
+              <StemLaneHeader
+                stem={stem}
+                label={stemDisplayName}
+                sensitivityValue={config?.[stem]}
+                onSensitivityChange={(val) => updateStemSensitivity(stem, val)}
+                showSlider={true}
+              />
             </div>
             <div className={`five-layer-content five-layer-stem-lane ${isFocused ? 'five-layer-stem-lane--focused' : ''} ${isDimmed ? 'five-layer-stem-lane--dimmed' : ''}`}>
               {lane.events.map((event) => {
