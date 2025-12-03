@@ -40,8 +40,6 @@ import {
   RegionAnnotations, 
   AnnotationLane, 
   AnnotationBlock,
-  StemCategory,
-  getAnnotations,
   saveAnnotations
 } from '../api/reference';
 import './VisualComposerPage.css';
@@ -49,8 +47,6 @@ import './VisualComposerPage.css';
 interface VisualComposerPageProps {
   onBack: () => void;
 }
-
-const STEM_CATEGORIES: StemCategory[] = ['drums', 'bass', 'vocals', 'instruments'];
 
 function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const { 
@@ -68,7 +64,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const [localRegionAnnotations, setLocalRegionAnnotations] = useState<RegionAnnotations>({
     regionId: regionId || '',
     lanes: [],
-    regionNotes: '',
+    blocks: [],
+    notes: '',
   });
 
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
@@ -77,7 +74,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update global annotations when local region annotations change
   const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
@@ -97,7 +94,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId: '',
         lanes: [],
-        regionNotes: '',
+        blocks: [],
+        notes: '',
       };
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
@@ -119,7 +117,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId,
         lanes: [],
-        regionNotes: '',
+        blocks: [],
+        notes: '',
       };
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
@@ -168,8 +167,11 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     if (!regionId) return;
 
     const newLane: AnnotationLane = {
-      stemCategory: 'drums', // Default
-      blocks: [],
+      id: `lane_${Date.now()}`,
+      name: 'New Lane',
+      color: '#808080',
+      collapsed: false,
+      order: localRegionAnnotations.lanes.length,
     };
 
     setLocalRegionAnnotations(prev => ({
@@ -197,7 +199,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     const lane = localRegionAnnotations.lanes[laneIndex];
     if (lane) {
       setEditingLaneId(`${regionId}_${laneIndex}`);
-      setLaneName(lane.stemCategory);
+      setLaneName(lane.name);
     }
   };
 
@@ -207,17 +209,17 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
     const [, laneIndexStr] = editingLaneId.split('_');
     const laneIndex = parseInt(laneIndexStr, 10);
-    const stemCategory = laneName.trim() as StemCategory;
+    const name = laneName.trim();
 
-    if (!STEM_CATEGORIES.includes(stemCategory)) {
-      alert('Invalid stem category. Must be one of: drums, bass, vocals, instruments');
+    if (!name) {
+      alert('Lane name cannot be empty');
       return;
     }
 
     setLocalRegionAnnotations(prev => ({
       ...prev,
       lanes: prev.lanes.map((lane, idx) =>
-        idx === laneIndex ? { ...lane, stemCategory } : lane
+        idx === laneIndex ? { ...lane, name } : lane
       ),
     }));
 
@@ -241,16 +243,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     setDragLaneId(`${regionId}_${laneIndex}`);
   };
 
-  const handleBarGridMouseMove = (bar: number) => {
+  const handleBarGridMouseMove = (_bar: number) => {
     if (!isDragging || dragStart === null || !dragLaneId) return;
-
-    const [regionId, laneIndexStr] = dragLaneId.split('_');
-    const laneIndex = parseInt(laneIndexStr, 10);
-    const startBar = Math.min(dragStart, bar);
-    const endBar = Math.max(dragStart, bar) + 1; // Make end exclusive
-
-    // Don't create blocks with zero or negative length
-    if (endBar <= startBar) return;
 
     // Create or update block (will be finalized on mouse up)
     // For now, we'll just track the drag
@@ -267,27 +261,26 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       if (endBar > startBar) {
         const lane = localRegionAnnotations.lanes[laneIndex];
         if (lane) {
-          // Check if block overlaps with existing blocks
-          const overlaps = lane.blocks.some(
-            b => (startBar < b.endBar && endBar > b.startBar)
+          // Check if block overlaps with existing blocks in this lane
+          const laneBlocks = localRegionAnnotations.blocks.filter(b => b.laneId === lane.id);
+          const overlaps = laneBlocks.some(
+            (b: AnnotationBlock) => (startBar < b.endBar && endBar > b.startBar)
           );
 
           if (!overlaps) {
-            // Create new block
+            // Create new block at region level
             const newBlock: AnnotationBlock = {
               id: `block_${Date.now()}`,
+              laneId: lane.id,
               startBar,
               endBar,
+              type: 'custom',
               label: null,
             };
 
             setLocalRegionAnnotations(prev => ({
               ...prev,
-              lanes: prev.lanes.map((l, idx) =>
-                idx === laneIndex
-                  ? { ...l, blocks: [...l.blocks, newBlock] }
-                  : l
-              ),
+              blocks: [...prev.blocks, newBlock],
             }));
           }
         }
@@ -300,19 +293,12 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   };
 
   // Delete block
-  const handleDeleteBlock = (laneIndex: number, blockId: string) => {
+  const handleDeleteBlock = (blockId: string) => {
     if (!regionId) return;
 
     setLocalRegionAnnotations(prev => ({
       ...prev,
-      lanes: prev.lanes.map((lane, idx) =>
-        idx === laneIndex
-          ? {
-              ...lane,
-              blocks: lane.blocks.filter(b => b.id !== blockId),
-            }
-          : lane
-      ),
+      blocks: prev.blocks.filter(b => b.id !== blockId),
     }));
   };
 
@@ -322,7 +308,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
     setLocalRegionAnnotations(prev => ({
       ...prev,
-      regionNotes: notes,
+      notes: notes,
     }));
   };
 
@@ -427,7 +413,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
                     ) : (
                       <div className="lane-title">
                         <span onClick={() => startEditingLane(laneIndex)}>
-                          {lane.stemCategory}
+                          {lane.name}
                         </span>
                         <button
                           className="collapse-button"
@@ -445,18 +431,19 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
                         <div className="bar-grid">
                           {Array.from({ length: totalBars }, (_, i) => {
                             const bar = i;
-                            const block = lane.blocks.find(
-                              b => bar >= b.startBar && bar < b.endBar
+                            const laneBlocks = localRegionAnnotations.blocks.filter(b => b.laneId === lane.id);
+                            const block = laneBlocks.find(
+                              (b: AnnotationBlock) => bar >= b.startBar && bar < b.endBar
                             );
-                            const isStart = lane.blocks.some(b => b.startBar === bar);
-                            const isEnd = lane.blocks.some(b => b.endBar === bar);
+                            const isStart = laneBlocks.some((b: AnnotationBlock) => b.startBar === bar);
+                            const isEnd = laneBlocks.some((b: AnnotationBlock) => b.endBar === bar);
 
                             return (
                               <div
                                 key={bar}
                                 className={`bar-cell ${block ? 'has-block' : ''} ${isStart ? 'block-start' : ''} ${isEnd ? 'block-end' : ''}`}
                                 onMouseDown={() => handleBarGridMouseDown(laneIndex, bar)}
-                                onMouseMove={(e) => {
+                                onMouseMove={() => {
                                   if (isDragging) {
                                     handleBarGridMouseMove(bar);
                                   }
@@ -476,20 +463,22 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
                       </div>
 
                       <div className="blocks-list">
-                        {lane.blocks.map((block) => (
-                          <div key={block.id} className="block-item">
-                            <span>
-                              Bar {block.startBar} - {block.endBar}
-                              {block.label && `: ${block.label}`}
-                            </span>
-                            <button
-                              className="delete-button"
-                              onClick={() => handleDeleteBlock(laneIndex, block.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
+                        {localRegionAnnotations.blocks
+                          .filter((b: AnnotationBlock) => b.laneId === lane.id)
+                          .map((block: AnnotationBlock) => (
+                            <div key={block.id} className="block-item">
+                              <span>
+                                Bar {block.startBar} - {block.endBar}
+                                {block.label && `: ${block.label}`}
+                              </span>
+                              <button
+                                className="delete-button"
+                                onClick={() => handleDeleteBlock(block.id)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   )}
@@ -503,7 +492,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           <h3>Region Notes</h3>
           <textarea
             className="region-notes-input"
-            value={localRegionAnnotations.regionNotes || ''}
+            value={localRegionAnnotations.notes || ''}
             onChange={(e) => handleRegionNotesChange(e.target.value)}
             placeholder="Add notes about this region..."
             rows={6}

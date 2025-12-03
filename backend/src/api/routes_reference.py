@@ -32,7 +32,7 @@ from analysis.call_response_detector.lanes_models import CallResponseByStemRespo
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
 from analysis.subregions.service import compute_region_subregions, DensityCurves
 from analysis.subregions.models import RegionSubRegionsDTO
-from models.annotations import ReferenceAnnotations, RegionAnnotations
+from models.annotations import ReferenceAnnotations, RegionAnnotations, AnnotationBlock
 from config import DEFAULT_SUBREGION_BARS_PER_CHUNK, DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
 from config import (
     DEFAULT_MOTIF_SENSITIVITY,
@@ -1009,7 +1009,8 @@ async def get_annotations(reference_id: str):
     # Return existing annotations or empty structure
     if reference_id in REFERENCE_ANNOTATIONS:
         annotations = REFERENCE_ANNOTATIONS[reference_id]
-        return annotations.model_dump()
+        # Use by_alias=True to return camelCase field names
+        return annotations.model_dump(by_alias=True)
     else:
         # Return empty structure
         return {
@@ -1062,8 +1063,46 @@ async def create_or_update_annotations(
         )
         annotations.reference_id = reference_id
     
+    # Migrate legacy format: if blocks are in lanes, move them to region level
+    import uuid
+    for region in annotations.regions:
+        # Ensure lanes have required fields (generate if missing for legacy format)
+        for idx, lane in enumerate(region.lanes):
+            # Generate id if missing (legacy format)
+            if not lane.id:
+                lane.id = f"lane_{uuid.uuid4().hex[:8]}"
+            # Set name from stemCategory if missing (legacy format)
+            if not lane.name and lane.stem_category:
+                lane.name = lane.stem_category
+            elif not lane.name:
+                lane.name = f"Lane {idx + 1}"
+            # Set default color if missing
+            if not lane.color:
+                lane.color = "#808080"  # Default gray
+            # Set order if missing
+            if lane.order is None:
+                lane.order = idx
+        
+        # Migrate blocks from lanes to region level
+        if not region.blocks:  # Only migrate if blocks array is empty
+            for lane in region.lanes:
+                if lane.blocks:  # Legacy format: blocks inside lane
+                    logger.info(f"Migrating {len(lane.blocks)} blocks from lane {lane.id} to region level")
+                    # Move blocks from lane to region level, setting laneId
+                    for block in lane.blocks:
+                        # Create new block with laneId
+                        block_dict = block.model_dump(exclude={'lane_id', 'laneId'}, exclude_unset=True)
+                        block_dict['lane_id'] = lane.id
+                        # Ensure type is set (default to 'custom' if missing)
+                        if 'type' not in block_dict:
+                            block_dict['type'] = 'custom'
+                        region.blocks.append(AnnotationBlock(**block_dict))
+                    # Clear legacy blocks from lane
+                    lane.blocks = None
+    
     # Store annotations in memory
     REFERENCE_ANNOTATIONS[reference_id] = annotations
     logger.info(f"Stored annotations for reference {reference_id}: {len(annotations.regions)} regions")
     
-    return annotations.model_dump()
+    # Use by_alias=True to return camelCase field names
+    return annotations.model_dump(by_alias=True)
