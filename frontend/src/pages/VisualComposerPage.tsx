@@ -150,6 +150,9 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     error: annotationsError,
     saveAnnotations: saveVcAnnotations,
     isSaving,
+    saveStatus,
+    isDirty,
+    forceSave,
   } = useVisualComposerAnnotations(referenceId || null);
 
   // Build ordered region list from annotations (if available) or fallback to regions from context
@@ -226,11 +229,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return null;
   }, [currentRegion, vcAnnotations]);
 
-  // Save status for UI feedback
-  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
-    type: null,
-    message: '',
-  });
+  // Note: saveStatus and isDirty are now provided by the hook
 
   // Local state for current region's annotations (using Annotation types for component compatibility)
   const [localRegionAnnotations, setLocalRegionAnnotations] = useState<RegionAnnotations>({
@@ -355,15 +354,10 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
     try {
       await saveVcAnnotations();
-      setSaveStatus({ type: 'success', message: 'Annotations saved successfully!' });
-      setTimeout(() => setSaveStatus({ type: null, message: '' }), 3000);
+      // saveStatus is updated by the hook
     } catch (err) {
       console.error('Error saving annotations:', err);
-      setSaveStatus({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to save annotations',
-      });
-      setTimeout(() => setSaveStatus({ type: null, message: '' }), 5000);
+      // Error status is updated by the hook
     }
   }, [vcAnnotations, referenceId, saveVcAnnotations]);
 
@@ -764,27 +758,47 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   // 2. A useEffect syncs localRegionAnnotations to vcAnnotations (keyed by regionId)
   // 3. When navigating, we change currentRegionIndex, which triggers a useEffect
   //    that loads the new region's annotations from vcAnnotations into localRegionAnnotations
-  // 4. The previous region's edits remain in vcAnnotations (unsaved until user clicks Save)
-  // This means unsaved edits are preserved in React state across region navigation
-  const handlePrevRegion = useCallback(() => {
+  // 4. The previous region's edits remain in vcAnnotations (unsaved until autosave completes)
+  // 5. If dirty, we trigger an immediate save before switching regions
+  const handlePrevRegion = useCallback(async () => {
     if (currentRegionIndex > 0) {
-      // Current region's edits are already synced to vcAnnotations via useEffect
-      // Just change the index to show the previous region
+      // If there are unsaved changes, save immediately before navigating
+      if (isDirty) {
+        try {
+          await forceSave();
+        } catch (err) {
+          console.error('Error saving before navigation:', err);
+          // Still allow navigation, but warn user
+          alert('Failed to save changes. Your edits may be lost if you navigate away.');
+        }
+      }
+      
+      // Change the index to show the previous region
       setCurrentRegionIndex(currentRegionIndex - 1);
       // Clear selected block when navigating
       setSelectedBlockId(null);
     }
-  }, [currentRegionIndex]);
+  }, [currentRegionIndex, isDirty, forceSave]);
 
-  const handleNextRegion = useCallback(() => {
+  const handleNextRegion = useCallback(async () => {
     if (currentRegionIndex < orderedRegions.length - 1) {
-      // Current region's edits are already synced to vcAnnotations via useEffect
-      // Just change the index to show the next region
+      // If there are unsaved changes, save immediately before navigating
+      if (isDirty) {
+        try {
+          await forceSave();
+        } catch (err) {
+          console.error('Error saving before navigation:', err);
+          // Still allow navigation, but warn user
+          alert('Failed to save changes. Your edits may be lost if you navigate away.');
+        }
+      }
+      
+      // Change the index to show the next region
       setCurrentRegionIndex(currentRegionIndex + 1);
       // Clear selected block when navigating
       setSelectedBlockId(null);
     }
-  }, [currentRegionIndex, orderedRegions.length]);
+  }, [currentRegionIndex, orderedRegions.length, isDirty, forceSave]);
 
   // Validation
   if (!referenceId || orderedRegions.length === 0) {
@@ -843,11 +857,23 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           >
             {isSaving ? 'Saving...' : 'Save'}
           </button>
-          {saveStatus.type && (
-            <span className={`save-status ${saveStatus.type}`}>
-              {saveStatus.message}
-            </span>
-          )}
+          <div className="save-status-indicator">
+            {saveStatus === 'saving' && (
+              <span className="save-status saving">Saving...</span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="save-status saved">All changes saved</span>
+            )}
+            {saveStatus === 'error' && (
+              <span className="save-status error">Save failed</span>
+            )}
+            {saveStatus === 'idle' && isDirty && (
+              <span className="save-status unsaved">Unsaved changes</span>
+            )}
+            {saveStatus === 'idle' && !isDirty && !isLoadingAnnotations && (
+              <span className="save-status saved">All changes saved</span>
+            )}
+          </div>
           {annotationsError && (
             <span className="save-status error">
               Error: {annotationsError.message}

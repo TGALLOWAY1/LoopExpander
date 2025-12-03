@@ -83,13 +83,25 @@
   cursor: not-allowed;
 }
 
+.save-status-indicator {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+}
+
 .save-status {
   font-size: 0.85rem;
   padding: 0.5rem 1rem;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
-.save-status.success {
+.save-status.saving {
+  color: #1976d2;
+  background-color: #e3f2fd;
+}
+
+.save-status.saved {
   color: #2e7d32;
   background-color: #e8f5e9;
 }
@@ -97,6 +109,11 @@
 .save-status.error {
   color: #c62828;
   background-color: #ffebee;
+}
+
+.save-status.unsaved {
+  color: #f57c00;
+  background-color: #fff3e0;
 }
 
 .region-navigation {
