@@ -1,7 +1,12 @@
 /**
  * RegionBlock component for displaying a single region in the timeline.
+ * 
+ * Component structure:
+ * - Top half: Region title, type, duration/time summary
+ * - Bottom half: DNA lanes showing subregion patterns per stem category
  */
-import { Region, MotifInstance, MotifGroup } from '../api/reference';
+import { Region, MotifInstance, MotifGroup, RegionSubRegions, StemCategory } from '../api/reference';
+import { SubRegionLanes } from './SubRegionLanes';
 import './RegionBlock.css';
 
 export type RegionBlockProps = {
@@ -11,6 +16,9 @@ export type RegionBlockProps = {
   motifGroups?: MotifGroup[];
   highlightedGroupId?: string | null;
   onMotifHover?: (groupId: string | null) => void;
+  subregions?: RegionSubRegions | null;
+  bpm?: number; // BPM for bar calculations
+  showMotifDots?: boolean; // Feature flag to show/hide old motif dot overlay
 };
 
 /**
@@ -69,19 +77,67 @@ function getMotifGroupColor(groupId: string | null): string {
   return colors[hash % colors.length];
 }
 
+/**
+ * Convert seconds to bars (assuming 4/4 time signature).
+ */
+function secondsToBars(seconds: number, bpm: number): number {
+  const beatsPerBar = 4.0;
+  const beats = (seconds * bpm) / 60.0;
+  return beats / beatsPerBar;
+}
+
 export function RegionBlock({ 
   region, 
   totalDuration, 
   motifs = [],
   motifGroups = [],
   highlightedGroupId = null,
-  onMotifHover
+  onMotifHover,
+  subregions,
+  bpm = 120, // Default BPM if not provided
+  showMotifDots = false, // Default to false - use DNA lanes instead
 }: RegionBlockProps): JSX.Element {
   const widthPercent = (region.duration / totalDuration) * 100;
   const backgroundColor = getRegionColor(region.type);
   const borderColor = getRegionBorderColor(region.type);
 
-  // Filter motifs that fall within this region
+  // Get lanes for this region from subregions
+  const lanes = subregions?.lanes || {
+    drums: [],
+    bass: [],
+    instruments: [],
+    vocals: [],
+  };
+
+  // Calculate region bar positions from subregion patterns (if available)
+  // Fall back to time-based calculation if no patterns
+  let regionStartBar = 0;
+  let regionEndBar = 0;
+  
+  if (subregions) {
+    // Find min startBar and max endBar across all lanes
+    const allPatterns = [
+      ...lanes.drums,
+      ...lanes.bass,
+      ...lanes.instruments,
+      ...lanes.vocals,
+    ];
+    
+    if (allPatterns.length > 0) {
+      regionStartBar = Math.min(...allPatterns.map(p => p.startBar));
+      regionEndBar = Math.max(...allPatterns.map(p => p.endBar));
+    } else {
+      // Fallback to time-based calculation
+      regionStartBar = secondsToBars(region.start, bpm);
+      regionEndBar = secondsToBars(region.end, bpm);
+    }
+  } else {
+    // No subregions yet - use time-based calculation
+    regionStartBar = secondsToBars(region.start, bpm);
+    regionEndBar = secondsToBars(region.end, bpm);
+  }
+
+  // Filter motifs that fall within this region (for old dot overlay if enabled)
   const regionMotifs = motifs.filter(
     (motif) => 
       motif.startTime >= region.start && 
@@ -89,7 +145,7 @@ export function RegionBlock({
       motif.regionIds.includes(region.id)
   );
 
-  // Create a map of groupId to color
+  // Create a map of groupId to color (for old dot overlay)
   const groupColorMap = new Map<string, string>();
   motifGroups.forEach((group) => {
     groupColorMap.set(group.id, getMotifGroupColor(group.id));
@@ -106,6 +162,7 @@ export function RegionBlock({
       }}
       title={`${region.name} (${region.type}): ${region.start.toFixed(1)}s - ${region.end.toFixed(1)}s`}
     >
+      {/* Top half: Region info */}
       <div className="region-block-content">
         <div className="region-name">{region.name}</div>
         <div className="region-time">
@@ -113,8 +170,33 @@ export function RegionBlock({
         </div>
       </div>
       
-      {/* Motif markers */}
-      {regionMotifs.length > 0 && (
+      {/* Bottom half: DNA lanes */}
+      {subregions ? (
+        <div className="region-block-lanes">
+          <SubRegionLanes
+            regionId={region.id}
+            lanes={lanes}
+            regionStartBar={regionStartBar}
+            regionEndBar={regionEndBar}
+            onPatternHover={(pattern) => {
+              // Highlight motif group when hovering over pattern
+              if (pattern?.motifGroupId) {
+                onMotifHover?.(pattern.motifGroupId);
+              } else {
+                onMotifHover?.(null);
+              }
+            }}
+            highlightedMotifGroupId={highlightedGroupId}
+          />
+        </div>
+      ) : (
+        <div className="region-block-lanes-loading">
+          <div className="loading-patterns">Loading patterns...</div>
+        </div>
+      )}
+
+      {/* Old motif dot overlay (gated by feature flag) */}
+      {showMotifDots && regionMotifs.length > 0 && (
         <div className="motif-markers">
           {regionMotifs.map((motif) => {
             const positionPercent = ((motif.startTime - region.start) / region.duration) * 100;

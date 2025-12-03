@@ -10,7 +10,8 @@ from fastapi.responses import JSONResponse
 
 from models.store import (
     REFERENCE_BUNDLES, REFERENCE_REGIONS, REFERENCE_MOTIFS, 
-    REFERENCE_CALL_RESPONSE, REFERENCE_FILLS, REFERENCE_MOTIF_INSTANCES_RAW
+    REFERENCE_CALL_RESPONSE, REFERENCE_FILLS, REFERENCE_MOTIF_INSTANCES_RAW,
+    REFERENCE_SUBREGIONS
 )
 from models.region import Region
 from stem_ingest.ingest_service import load_reference_bundle
@@ -20,6 +21,9 @@ from analysis.motif_detector.motif_detector import (
 )
 from analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 from analysis.fill_detector.fill_detector import detect_fills, FillConfig
+from analysis.subregions.service import compute_region_subregions, DensityCurves
+from analysis.subregions.models import RegionSubRegionsDTO
+from config import DEFAULT_SUBREGION_BARS_PER_CHUNK, DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
 from config import (
     DEFAULT_MOTIF_SENSITIVITY,
     DEFAULT_CALL_RESPONSE_MIN_OFFSET_BARS,
@@ -49,11 +53,11 @@ def _get_gallium_test_paths() -> Dict[str, Path]:
     """Get file paths for Gallium test stems."""
     root = _get_project_root() / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
     return {
-        "drums": root / "Drums.wav",
-        "bass": root / "Bass.wav",
-        "vocals": root / "Vocals.wav",
-        "instruments": root / "Instruments.wav",
-        "full_mix": root / "Full Mix.wav",
+        "drums": root / "D - 130BPM - GalliumMakeEmWatch Drums.wav",
+        "bass": root / "D - 130BPM - GalliumMakeEmWatch Bass.wav",
+        "vocals": root / "D - 130BPM - GalliumMakeEmWatch Vocals.wav",
+        "instruments": root / "D - 130BPM - GalliumMakeEmWatch Instruments.wav",
+        "full_mix": root / "D - 130BPM - GalliumMakeEmWatch Full.wav",
     }
 
 
@@ -552,4 +556,115 @@ async def get_fills(reference_id: str):
         "referenceId": reference_id,
         "fills": fills_dict,
         "count": len(fills_dict)
+    }
+
+
+@router.get("/{reference_id}/subregions")
+async def get_subregions(reference_id: str):
+    """
+    Get computed subregion patterns for a reference bundle.
+    
+    This endpoint provides DNA-style segmentation of regions into subregions
+    per stem category, capturing patterns, variations, silence, and intensity.
+    
+    Args:
+        reference_id: ID of the reference bundle
+    
+    Returns:
+        JSON with subregion data organized by region and stem category (lanes)
+    
+    Example response:
+        {
+            "reference_id": "abc123",
+            "regions": [
+                {
+                    "regionId": "region_01",
+                    "lanes": {
+                        "drums": [
+                            {
+                                "id": "subregion_region_01_drums_1",
+                                "regionId": "region_01",
+                                "stemCategory": "drums",
+                                "startBar": 0.0,
+                                "endBar": 8.0,
+                                "label": null,
+                                "motifGroupId": null,
+                                "isVariation": false,
+                                "isSilence": false,
+                                "intensity": 0.5
+                            }
+                        ],
+                        "bass": [...],
+                        "vocals": [...],
+                        "instruments": [...]
+                    }
+                }
+            ]
+        }
+    """
+    logger.info(f"Getting subregions for reference_id: {reference_id}")
+    
+    # Check if reference exists
+    if reference_id not in REFERENCE_BUNDLES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference bundle {reference_id} not found"
+        )
+    
+    bundle = REFERENCE_BUNDLES[reference_id]
+    
+    # Check if regions have been detected
+    if reference_id not in REFERENCE_REGIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Regions not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    regions = REFERENCE_REGIONS[reference_id]
+    
+    # Check if motifs have been detected (needed for subregion computation)
+    if reference_id not in REFERENCE_MOTIFS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Motifs not found for reference {reference_id}. Run /analyze first."
+        )
+    
+    # Get motifs
+    motif_instances, motif_groups = REFERENCE_MOTIFS[reference_id]
+    
+    # Check if subregions are already computed and cached
+    if reference_id in REFERENCE_SUBREGIONS:
+        logger.info(f"Returning cached subregions for reference {reference_id}")
+        subregions = REFERENCE_SUBREGIONS[reference_id]
+    else:
+        # Compute subregions using real analysis data
+        logger.info(f"Computing subregions for reference {reference_id}")
+        
+        # Create density curves from bundle (computes RMS envelopes per stem)
+        density_curves = DensityCurves(bundle)
+        
+        # Compute subregions
+        subregions = compute_region_subregions(
+            regions=regions,
+            motifs=motif_instances,
+            motif_groups=motif_groups,
+            density_curves=density_curves,
+            bpm=bundle.bpm,
+            bars_per_chunk=DEFAULT_SUBREGION_BARS_PER_CHUNK,
+            silence_threshold=DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD
+        )
+        
+        # Cache the result
+        REFERENCE_SUBREGIONS[reference_id] = subregions
+        logger.info(f"Cached subregions for reference {reference_id}")
+    
+    # Convert to DTOs for JSON serialization
+    regions_dto = []
+    for region_subregions in subregions:
+        region_dto = RegionSubRegionsDTO.model_validate(region_subregions)
+        regions_dto.append(region_dto)
+    
+    return {
+        "referenceId": reference_id,
+        "regions": [r.model_dump(by_alias=True) for r in regions_dto]
     }
