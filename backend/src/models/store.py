@@ -24,3 +24,7 @@ REFERENCE_CALL_RESPONSE: Dict[str, List] = {}
 # In-memory storage for detected fills per reference
 REFERENCE_FILLS: Dict[str, List] = {}
 
+# In-memory storage for computed subregions per reference
+# Maps reference_id -> list[RegionSubRegions]
+REFERENCE_SUBREGIONS: Dict[str, List] = {}
+
