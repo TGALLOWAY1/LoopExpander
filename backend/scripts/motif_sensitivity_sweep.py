@@ -15,10 +15,15 @@ from pathlib import Path
 from collections import Counter
 from typing import List
 
-# Add parent directory to path to allow imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add backend/src to path to allow imports
+# The script is in backend/scripts/, so parent.parent is backend/, then we need backend/src
+backend_dir = Path(__file__).parent.parent
+src_dir = backend_dir / "src"
+sys.path.insert(0, str(src_dir))
 
 from src.models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS
+from src.stem_ingest.ingest_service import load_reference_bundle
+from src.analysis.region_detector.region_detector import detect_regions
 from src.analysis.motif_detector.config import MotifSensitivityConfig, normalize_sensitivity_config
 from src.analysis.motif_detector.motif_detector import detect_motifs, MotifInstance, MotifGroup
 from src.analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
@@ -111,6 +116,22 @@ def looks_good(comp: float) -> bool:
     return 2.0 <= comp <= 6.0
 
 
+def _get_gallium_test_paths() -> dict:
+    """Get file paths for Gallium test stems."""
+    # Get project root (2 levels up from backend/scripts/ = backend/, then 1 more = root)
+    script_file = Path(__file__).resolve()
+    backend_dir = script_file.parents[1]  # backend/
+    project_root = backend_dir.parent  # project root
+    root = project_root / "2. Test Data" / "Song-1-Gallium-MakeEmWatch-130BPM"
+    return {
+        "drums": root / "D - 130BPM - GalliumMakeEmWatch Drums.wav",
+        "bass": root / "D - 130BPM - GalliumMakeEmWatch Bass.wav",
+        "vocals": root / "D - 130BPM - GalliumMakeEmWatch Vocals.wav",
+        "instruments": root / "D - 130BPM - GalliumMakeEmWatch Instruments.wav",
+        "full_mix": root / "D - 130BPM - GalliumMakeEmWatch Full.wav",
+    }
+
+
 def run_sweep(reference_id: str):
     """
     Run motif + grouping + call/response analysis with different sensitivity configs.
@@ -118,23 +139,41 @@ def run_sweep(reference_id: str):
     Prints a compact tabular report showing motifs, groups, and pairs per stem.
     
     Args:
-        reference_id: ID of the reference bundle to test
+        reference_id: ID of the reference bundle to test (or "gallium" to use test data)
     """
     # Load reference bundle
-    # TODO: Adapt load_reference_by_id to your actual storage layer
-    if reference_id not in REFERENCE_BUNDLES:
-        print(f"ERROR: Reference {reference_id} not found in REFERENCE_BUNDLES")
-        print(f"Available references: {list(REFERENCE_BUNDLES.keys())}")
-        return
+    bundle = None
+    regions = None
     
-    bundle = REFERENCE_BUNDLES[reference_id]
+    # Try in-memory store first (in case server is running in same process)
+    if reference_id in REFERENCE_BUNDLES:
+        bundle = REFERENCE_BUNDLES[reference_id]
+        if reference_id in REFERENCE_REGIONS:
+            regions = REFERENCE_REGIONS[reference_id]
     
-    # Load regions (required for motif detection)
-    if reference_id not in REFERENCE_REGIONS:
-        print(f"ERROR: Regions not found for reference {reference_id}. Run /analyze first.")
-        return
+    # If not in memory, try loading from disk (for Gallium test data)
+    if bundle is None:
+        if reference_id.lower() == "gallium" or reference_id == "test":
+            logger.info("Loading Gallium test data from disk...")
+            paths = _get_gallium_test_paths()
+            # Validate files exist
+            missing = [k for k, v in paths.items() if not v.exists()]
+            if missing:
+                print(f"ERROR: Missing test files: {missing}")
+                return
+            bundle = load_reference_bundle(paths)
+            logger.info(f"Loaded bundle: BPM={bundle.bpm}, duration={bundle.full_mix.duration}")
+        else:
+            print(f"ERROR: Reference {reference_id} not found in memory and not a known test dataset.")
+            print("Available in-memory references:", list(REFERENCE_BUNDLES.keys()))
+            print("Use 'gallium' or 'test' as reference_id to load test data from disk.")
+            return
     
-    regions = REFERENCE_REGIONS[reference_id]
+    # Detect regions if not already loaded
+    if regions is None:
+        logger.info("Detecting regions...")
+        regions = detect_regions(bundle)
+        logger.info(f"Detected {len(regions)} regions")
     
     # TODO: If your pipeline precomputes features, add that here and reuse
     # features = compute_motif_features(reference)
