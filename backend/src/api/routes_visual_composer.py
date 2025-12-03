@@ -83,7 +83,7 @@ async def get_visual_composer_annotations(project_id: str):
     logger.info(f"Getting Visual Composer annotations for project_id: {project_id}")
     
     try:
-        # Get existing annotations
+        # Get existing annotations (returns None if none exist - this is expected)
         existing_annotations = get_annotations(project_id)
         
         # Get known regions from the main analysis (if available)
@@ -120,6 +120,16 @@ async def get_visual_composer_annotations(project_id: str):
                 create_default_region_annotations(region, bpm, idx)
                 for idx, region in enumerate(known_regions)
             ]
+        
+        # If no known regions and no existing annotations, return empty structure (still 200 OK)
+        # This is the expected case for a new project
+        if not known_regions and not existing_annotations:
+            logger.info(f"No regions found for project {project_id}, returning empty annotations structure")
+            final_annotations = VisualComposerAnnotations(
+                projectId=project_id,
+                regions=[]
+            )
+            return final_annotations.model_dump(by_alias=True)
         
         # Sort by displayOrder if available, otherwise by regionId
         all_region_annotations.sort(key=lambda r: (r.displayOrder if r.displayOrder is not None else 999, r.regionId))

@@ -279,22 +279,31 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   }, []);
 
   // Update Vc annotations when local region annotations change
+  // Use functional update to avoid dependency on vcAnnotations
   const updateVcAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
-    if (!vcAnnotations || !referenceId) return;
+    if (!referenceId) return;
 
-    const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion || null);
-    const otherRegions = vcAnnotations.regions.filter(r => r.regionId !== updatedRegion.regionId);
-    const next: VcAnnotations = {
-      ...vcAnnotations,
-      regions: [...otherRegions, updatedVcRegion],
-    };
-    setVcAnnotations(next);
-  }, [vcAnnotations, setVcAnnotations, referenceId, currentRegion]);
+    setVcAnnotations(prev => {
+      if (!prev) return prev; // Don't update if annotations haven't loaded yet
+      
+      const updatedVcRegion = regionAnnotationsToVcRegion(updatedRegion, currentRegion || null);
+      const otherRegions = prev.regions.filter(r => r.regionId !== updatedRegion.regionId);
+      return {
+        ...prev,
+        regions: [...otherRegions, updatedVcRegion],
+      };
+    });
+  }, [setVcAnnotations, referenceId, currentRegion]);
 
   // Track if we're syncing from global to avoid circular updates
   const isSyncingFromGlobalRef = useRef(false);
+  // Track the last regionId we synced to avoid unnecessary updates
+  const lastSyncedRegionIdRef = useRef<string | undefined>(undefined);
 
-  // Find or create RegionAnnotations when regionId or vcAnnotations change
+  // Find or create RegionAnnotations when regionId changes OR when vcAnnotations is first loaded
+  // This should NOT run every time vcAnnotations changes, only when:
+  // 1. regionId changes (user navigates to different region)
+  // 2. vcAnnotations transitions from null/undefined to having data (initial load)
   useEffect(() => {
     if (!regionId) {
       const emptyRegionAnnotations: RegionAnnotations = {
@@ -306,11 +315,17 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
       isSyncingFromGlobalRef.current = false;
+      lastSyncedRegionIdRef.current = undefined;
+      return;
+    }
+
+    // Only sync if regionId changed OR if we haven't synced this region yet
+    if (lastSyncedRegionIdRef.current === regionId && vcAnnotations) {
+      // Already synced this region, skip unless vcAnnotations just loaded
       return;
     }
 
     // Find existing VcRegionAnnotations for current region
-    // The backend should have created defaults for all known regions, so this should always find one
     const existingVcRegion = vcAnnotations?.regions.find(
       r => r.regionId === regionId
     );
@@ -319,9 +334,9 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(vcRegionToRegionAnnotations(existingVcRegion));
       isSyncingFromGlobalRef.current = false;
-    } else {
-      // Create empty RegionAnnotations if not found (shouldn't happen if backend creates defaults)
-      // This is a fallback for edge cases
+      lastSyncedRegionIdRef.current = regionId;
+    } else if (vcAnnotations && currentRegion) {
+      // Create empty RegionAnnotations if not found
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId,
         lanes: [],
@@ -331,24 +346,28 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
       isSyncingFromGlobalRef.current = false;
+      lastSyncedRegionIdRef.current = regionId;
       
       // Also ensure it's added to Vc annotations with region metadata
-      if (vcAnnotations && currentRegion) {
-        const newVcRegion = regionAnnotationsToVcRegion(emptyRegionAnnotations, currentRegion);
-        setVcAnnotations({
-          ...vcAnnotations,
-          regions: [...vcAnnotations.regions, newVcRegion],
-        });
-      }
+      const newVcRegion = regionAnnotationsToVcRegion(emptyRegionAnnotations, currentRegion);
+      setVcAnnotations({
+        ...vcAnnotations,
+        regions: [...vcAnnotations.regions, newVcRegion],
+      });
     }
-  }, [regionId, vcAnnotations]);
+    // If vcAnnotations is null/undefined, wait for it to load
+  }, [regionId, currentRegion, vcAnnotations]); // Keep vcAnnotations to sync on initial load
 
   // Update Vc annotations whenever localRegionAnnotations changes (but not when syncing from global)
+  // This effect should NOT depend on vcAnnotations to avoid circular updates
   useEffect(() => {
     if (localRegionAnnotations.regionId && !isSyncingFromGlobalRef.current && vcAnnotations) {
-      updateVcAnnotations(localRegionAnnotations);
+      // Only update if the regionId matches (prevent updating wrong region)
+      if (localRegionAnnotations.regionId === regionId) {
+        updateVcAnnotations(localRegionAnnotations);
+      }
     }
-  }, [localRegionAnnotations, updateVcAnnotations, vcAnnotations]);
+  }, [localRegionAnnotations, regionId, updateVcAnnotations]); // Removed vcAnnotations from deps
 
   // Handle manual save button click
   const handleSave = useCallback(async () => {

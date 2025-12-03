@@ -59,35 +59,56 @@ export interface VcAnnotations {
  * @returns Promise with annotations data, or empty structure if none exist
  */
 export async function getVisualComposerAnnotations(projectId: string): Promise<VcAnnotations> {
-  const response = await fetch(`${API_BASE_URL}/api/visual-composer/${projectId}/annotations`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/visual-composer/${projectId}/annotations`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-  // If error (500, etc.), return empty structure instead of throwing
-  if (!response.ok) {
-    console.warn(`Failed to fetch Visual Composer annotations for project ${projectId}: ${response.status}`);
+    // Handle 404 or other errors by returning empty structure instead of throwing
+    if (!response.ok) {
+      if (response.status === 404) {
+        // 404 is expected for new projects - return empty structure
+        return {
+          projectId,
+          regions: [],
+        };
+      }
+      // For other errors, log and return empty structure
+      console.warn(`Failed to fetch Visual Composer annotations for project ${projectId}: ${response.status}`);
+      return {
+        projectId,
+        regions: [],
+      };
+    }
+
+    const data = await response.json();
+    
+    // Normalize data with safe defaults
+    return {
+      projectId: data.projectId || projectId,
+      regions: (data.regions || []).map((region: any) => ({
+        regionId: region.regionId || '',
+        regionName: region.regionName ?? null,
+        notes: region.notes ?? null,
+        startBar: region.startBar ?? null,
+        endBar: region.endBar ?? null,
+        regionType: region.regionType ?? null,
+        displayOrder: region.displayOrder ?? null,
+        lanes: region.lanes || [],
+        blocks: region.blocks || [],
+      })),
+    };
+  } catch (error) {
+    // Network errors or JSON parsing errors - return empty structure
+    console.warn(`Error fetching Visual Composer annotations for project ${projectId}:`, error);
     return {
       projectId,
       regions: [],
     };
   }
-
-  const data = await response.json();
-  
-  // Normalize data with safe defaults
-  return {
-    projectId: data.projectId || projectId,
-    regions: (data.regions || []).map((region: any) => ({
-      regionId: region.regionId || '',
-      regionName: region.regionName ?? null,
-      notes: region.notes ?? null,
-      lanes: region.lanes || [],
-      blocks: region.blocks || [],
-    })),
-  };
 }
 
 /**
