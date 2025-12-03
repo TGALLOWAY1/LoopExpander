@@ -29,53 +29,82 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   } = useProject();
 
   const [currentRegionIndex, setCurrentRegionIndex] = useState(0);
-  const [localAnnotations, setLocalAnnotations] = useState<ReferenceAnnotations | null>(null);
+  const currentRegion = regions?.[currentRegionIndex];
+  const regionId = currentRegion?.id;
+
+  // Local state for current region's annotations
+  const [localRegionAnnotations, setLocalRegionAnnotations] = useState<RegionAnnotations>({
+    regionId: regionId || '',
+    lanes: [],
+    regionNotes: '',
+  });
+
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
   const [editingLaneId, setEditingLaneId] = useState<string | null>(null);
   const [laneName, setLaneName] = useState<string>('');
-  const [regionNotes, setRegionNotes] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load annotations on mount
+  // Update global annotations when local region annotations change
+  const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
+    if (!annotations) return;
+
+    const others = annotations.regions.filter(r => r.regionId !== updatedRegion.regionId);
+    const next = { ...annotations, regions: [...others, updatedRegion] };
+    setAnnotations(next);
+  }, [annotations, setAnnotations]);
+
+  // Track if we're syncing from global to avoid circular updates
+  const isSyncingFromGlobalRef = useRef(false);
+
+  // Find or create RegionAnnotations when regionId or annotations change
   useEffect(() => {
-    if (!referenceId) return;
+    if (!regionId) {
+      const emptyRegionAnnotations: RegionAnnotations = {
+        regionId: '',
+        lanes: [],
+        regionNotes: '',
+      };
+      isSyncingFromGlobalRef.current = true;
+      setLocalRegionAnnotations(emptyRegionAnnotations);
+      isSyncingFromGlobalRef.current = false;
+      return;
+    }
 
-    const loadAnnotations = async () => {
-      try {
-        const data = await getAnnotations(referenceId);
-        setLocalAnnotations(data);
-        setAnnotations(data);
-      } catch (err) {
-        console.error('Error loading annotations:', err);
-        // Initialize with empty structure
-        const empty: ReferenceAnnotations = {
-          referenceId,
-          regions: [],
-        };
-        setLocalAnnotations(empty);
-        setAnnotations(empty);
-      }
-    };
-
-    loadAnnotations();
-  }, [referenceId, setAnnotations]);
-
-  // Sync region notes when region changes
-  useEffect(() => {
-    if (!localAnnotations || regions.length === 0) return;
-    
-    const currentRegion = regions[currentRegionIndex];
-    if (!currentRegion) return;
-
-    const regionAnnotation = localAnnotations.regions.find(
-      r => r.regionId === currentRegion.id
+    // Find existing RegionAnnotations for current region
+    const existingRegionAnnotations = annotations?.regions.find(
+      r => r.regionId === regionId
     );
-    
-    setRegionNotes(regionAnnotation?.regionNotes || '');
-  }, [currentRegionIndex, localAnnotations, regions]);
+
+    if (existingRegionAnnotations) {
+      isSyncingFromGlobalRef.current = true;
+      setLocalRegionAnnotations(existingRegionAnnotations);
+      isSyncingFromGlobalRef.current = false;
+    } else {
+      // Create empty RegionAnnotations
+      const emptyRegionAnnotations: RegionAnnotations = {
+        regionId,
+        lanes: [],
+        regionNotes: '',
+      };
+      isSyncingFromGlobalRef.current = true;
+      setLocalRegionAnnotations(emptyRegionAnnotations);
+      isSyncingFromGlobalRef.current = false;
+      // Also add to global annotations
+      if (annotations) {
+        updateGlobalAnnotations(emptyRegionAnnotations);
+      }
+    }
+  }, [regionId, annotations, updateGlobalAnnotations]);
+
+  // Update global annotations whenever localRegionAnnotations changes (but not when syncing from global)
+  useEffect(() => {
+    if (localRegionAnnotations.regionId && !isSyncingFromGlobalRef.current) {
+      updateGlobalAnnotations(localRegionAnnotations);
+    }
+  }, [localRegionAnnotations, updateGlobalAnnotations]);
 
   // Debounced save function
   const debouncedSave = useCallback((data: ReferenceAnnotations) => {
@@ -95,74 +124,31 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     }, 1000); // 1 second debounce
   }, [referenceId, setAnnotations]);
 
-  // Update local annotations and trigger save
-  const updateLocalAnnotations = useCallback((updater: (prev: ReferenceAnnotations) => ReferenceAnnotations) => {
-    setLocalAnnotations(prev => {
-      if (!prev || !referenceId) return prev;
-      const updated = updater(prev);
-      debouncedSave(updated);
-      return updated;
-    });
-  }, [referenceId, debouncedSave]);
-
-  // Get or create region annotations for current region
-  const getCurrentRegionAnnotations = (): RegionAnnotations => {
-    if (!localAnnotations || regions.length === 0) {
-      return { regionId: '', lanes: [] };
+  // Save annotations when they change
+  useEffect(() => {
+    if (annotations && referenceId) {
+      debouncedSave(annotations);
     }
-
-    const currentRegion = regions[currentRegionIndex];
-    if (!currentRegion) {
-      return { regionId: '', lanes: [] };
-    }
-
-    let regionAnnotation = localAnnotations.regions.find(
-      r => r.regionId === currentRegion.id
-    );
-
-    if (!regionAnnotation) {
-      regionAnnotation = {
-        regionId: currentRegion.id,
-        lanes: [],
-        regionNotes: null,
-      };
-      // Add to local annotations
-      updateLocalAnnotations(prev => ({
-        ...prev,
-        regions: [...prev.regions, regionAnnotation!],
-      }));
-    }
-
-    return regionAnnotation;
-  };
+  }, [annotations, referenceId, debouncedSave]);
 
   // Add a new lane
   const handleAddLane = () => {
-    if (!localAnnotations || !referenceId || regions.length === 0) return;
+    if (!regionId) return;
 
-    const currentRegion = regions[currentRegionIndex];
-    if (!currentRegion) return;
-
-    const regionAnnotation = getCurrentRegionAnnotations();
-    const newLaneId = `lane_${Date.now()}`;
     const newLane: AnnotationLane = {
       stemCategory: 'drums', // Default
       blocks: [],
     };
 
-    updateLocalAnnotations(prev => ({
+    setLocalRegionAnnotations(prev => ({
       ...prev,
-      regions: prev.regions.map(r =>
-        r.regionId === currentRegion.id
-          ? { ...r, lanes: [...r.lanes, newLane] }
-          : r
-      ),
+      lanes: [...prev.lanes, newLane],
     }));
   };
 
   // Toggle lane collapse
   const toggleLaneCollapse = (laneIndex: number) => {
-    const key = `${regions[currentRegionIndex]?.id}_${laneIndex}`;
+    const key = `${regionId}_${laneIndex}`;
     setCollapsedLanes(prev => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -176,19 +162,18 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
   // Start editing lane name
   const startEditingLane = (laneIndex: number) => {
-    const regionAnnotation = getCurrentRegionAnnotations();
-    const lane = regionAnnotation.lanes[laneIndex];
+    const lane = localRegionAnnotations.lanes[laneIndex];
     if (lane) {
-      setEditingLaneId(`${regions[currentRegionIndex]?.id}_${laneIndex}`);
+      setEditingLaneId(`${regionId}_${laneIndex}`);
       setLaneName(lane.stemCategory);
     }
   };
 
   // Save lane name edit
   const saveLaneEdit = () => {
-    if (!editingLaneId || !localAnnotations || regions.length === 0) return;
+    if (!editingLaneId || !regionId) return;
 
-    const [regionId, laneIndexStr] = editingLaneId.split('_');
+    const [, laneIndexStr] = editingLaneId.split('_');
     const laneIndex = parseInt(laneIndexStr, 10);
     const stemCategory = laneName.trim() as StemCategory;
 
@@ -197,17 +182,10 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       return;
     }
 
-    updateLocalAnnotations(prev => ({
+    setLocalRegionAnnotations(prev => ({
       ...prev,
-      regions: prev.regions.map(r =>
-        r.regionId === regionId
-          ? {
-              ...r,
-              lanes: r.lanes.map((lane, idx) =>
-                idx === laneIndex ? { ...lane, stemCategory } : lane
-              ),
-            }
-          : r
+      lanes: prev.lanes.map((lane, idx) =>
+        idx === laneIndex ? { ...lane, stemCategory } : lane
       ),
     }));
 
@@ -228,7 +206,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const handleBarGridMouseDown = (laneIndex: number, bar: number) => {
     setIsDragging(true);
     setDragStart(bar);
-    setDragLaneId(`${regions[currentRegionIndex]?.id}_${laneIndex}`);
+    setDragLaneId(`${regionId}_${laneIndex}`);
   };
 
   const handleBarGridMouseMove = (bar: number) => {
@@ -248,15 +226,14 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
   const handleBarGridMouseUp = (finalBar?: number) => {
     if (isDragging && dragStart !== null && dragLaneId && finalBar !== undefined) {
-      const [regionId, laneIndexStr] = dragLaneId.split('_');
+      const [, laneIndexStr] = dragLaneId.split('_');
       const laneIndex = parseInt(laneIndexStr, 10);
       const startBar = Math.min(dragStart, finalBar);
       const endBar = Math.max(dragStart, finalBar) + 1; // Make end exclusive
 
       // Don't create blocks with zero or negative length
       if (endBar > startBar) {
-        const regionAnnotation = getCurrentRegionAnnotations();
-        const lane = regionAnnotation.lanes[laneIndex];
+        const lane = localRegionAnnotations.lanes[laneIndex];
         if (lane) {
           // Check if block overlaps with existing blocks
           const overlaps = lane.blocks.some(
@@ -272,19 +249,12 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
               label: null,
             };
 
-            updateLocalAnnotations(prev => ({
+            setLocalRegionAnnotations(prev => ({
               ...prev,
-              regions: prev.regions.map(r =>
-                r.regionId === regionId
-                  ? {
-                      ...r,
-                      lanes: r.lanes.map((l, idx) =>
-                        idx === laneIndex
-                          ? { ...l, blocks: [...l.blocks, newBlock] }
-                          : l
-                      ),
-                    }
-                  : r
+              lanes: prev.lanes.map((l, idx) =>
+                idx === laneIndex
+                  ? { ...l, blocks: [...l.blocks, newBlock] }
+                  : l
               ),
             }));
           }
@@ -299,46 +269,28 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
   // Delete block
   const handleDeleteBlock = (laneIndex: number, blockId: string) => {
-    if (!localAnnotations || regions.length === 0) return;
+    if (!regionId) return;
 
-    const currentRegion = regions[currentRegionIndex];
-    if (!currentRegion) return;
-
-    updateLocalAnnotations(prev => ({
+    setLocalRegionAnnotations(prev => ({
       ...prev,
-      regions: prev.regions.map(r =>
-        r.regionId === currentRegion.id
+      lanes: prev.lanes.map((lane, idx) =>
+        idx === laneIndex
           ? {
-              ...r,
-              lanes: r.lanes.map((lane, idx) =>
-                idx === laneIndex
-                  ? {
-                      ...lane,
-                      blocks: lane.blocks.filter(b => b.id !== blockId),
-                    }
-                  : lane
-              ),
+              ...lane,
+              blocks: lane.blocks.filter(b => b.id !== blockId),
             }
-          : r
+          : lane
       ),
     }));
   };
 
   // Update region notes
   const handleRegionNotesChange = (notes: string) => {
-    setRegionNotes(notes);
-    
-    if (!localAnnotations || regions.length === 0) return;
-    const currentRegion = regions[currentRegionIndex];
-    if (!currentRegion) return;
+    if (!regionId) return;
 
-    updateLocalAnnotations(prev => ({
+    setLocalRegionAnnotations(prev => ({
       ...prev,
-      regions: prev.regions.map(r =>
-        r.regionId === currentRegion.id
-          ? { ...r, regionNotes: notes }
-          : r
-      ),
+      regionNotes: notes,
     }));
   };
 
@@ -370,10 +322,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     );
   }
 
-  const currentRegion = regions[currentRegionIndex];
-  const regionAnnotation = getCurrentRegionAnnotations();
   const totalBars = getRegionBars();
-  const regionKey = `${currentRegion.id}_${currentRegionIndex}`;
+  const regionKey = `${regionId}_${currentRegionIndex}`;
 
   return (
     <div className="visual-composer-page">
@@ -416,7 +366,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           </div>
 
           <div className="lanes-list">
-            {regionAnnotation.lanes.map((lane, laneIndex) => {
+            {localRegionAnnotations.lanes.map((lane, laneIndex) => {
               const laneKey = `${regionKey}_${laneIndex}`;
               const isCollapsed = collapsedLanes.has(laneKey);
               const isEditing = editingLaneId === laneKey;
@@ -521,7 +471,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
           <h3>Region Notes</h3>
           <textarea
             className="region-notes-input"
-            value={regionNotes}
+            value={localRegionAnnotations.regionNotes || ''}
             onChange={(e) => handleRegionNotesChange(e.target.value)}
             placeholder="Add notes about this region..."
             rows={6}
