@@ -41,7 +41,7 @@ DEFAULT_SUBREGION_SILENCE_INTENSITY_THRESHOLD = float(os.environ.get("DEFAULT_SU
 USE_FULL_MIX_FOR_LANE_VIEW = os.environ.get("USE_FULL_MIX_FOR_LANE_VIEW", "false").lower() == "true"
 
 # Visual Composer annotations feature flag
-VISUAL_COMPOSER_ENABLED = os.environ.get("VISUAL_COMPOSER_ENABLED", "false").lower() == "true"
+VISUAL_COMPOSER_ENABLED: bool = os.getenv("VISUAL_COMPOSER_ENABLED", "false").lower() == "true"
 
 
 def get_settings() -> dict:
