@@ -38,9 +38,16 @@ export const StemLaneHeader: React.FC<StemLaneHeaderProps> = ({
 
   return (
     <div className="stem-lane-header">
-      <div className="stem-lane-header-main">
-        <span className="stem-lane-label">{label}</span>
-        {showSlider && (
+          <div className="stem-lane-header-main">
+            <span className="stem-lane-label">
+              {label}
+              {typeof sensitivityValue === "number" && (
+                <span className="stem-lane-sensitivity-value-inline">
+                  {" "}({sensitivityValue.toFixed(2)})
+                </span>
+              )}
+            </span>
+            {showSlider && (
           <button
             type="button"
             className="stem-lane-chevron"
