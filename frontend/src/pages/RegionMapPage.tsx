@@ -3,11 +3,12 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { RegionBlock } from '../components/RegionBlock';
+import { FiveLayerRegionMap } from '../components/FiveLayerRegionMap';
 import { CallResponsePanel } from '../components/CallResponsePanel';
 import { MotifGroupsPanel } from '../components/MotifGroupsPanel';
 import { MotifSensitivityPanel } from '../components/MotifSensitivityPanel';
 import { getMotifs, getCallResponse, getFills, fetchReferenceSubregions, reanalyzeMotifs } from '../api/reference';
+import { useCallResponseLanes } from '../hooks/useCallResponseLanes';
 import type { CallResponsePair } from '../api/reference';
 import './RegionMapPage.css';
 
@@ -35,6 +36,9 @@ function RegionMapPage(): JSX.Element {
   const [isMotifPaused, setIsMotifPaused] = useState(false);
   const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
   const [highlightedPairId, setHighlightedPairId] = useState<string | null>(null);
+
+  // Load call/response lanes for the 5-layer view
+  const { data: callResponseLanesData, loading: loadingLanes, error: lanesError } = useCallResponseLanes(referenceId);
 
   // Load motifs with current sensitivity
   const loadMotifs = useCallback(async (sensitivity: number) => {
@@ -294,57 +298,23 @@ function RegionMapPage(): JSX.Element {
 
         <div className="region-map-main-content">
           <div className="region-map-timeline-section">
-            <div className="region-timeline">
-              <div className="timeline-header">
-                <div className="timeline-scale">
-                  {Array.from({ length: Math.ceil(totalDuration / 10) + 1 }, (_, i) => i * 10).map((time) => (
-                    <div key={time} className="timeline-marker">
-                      <span className="timeline-label">{time}s</span>
-                    </div>
-                  ))}
-                </div>
-                {/* Fill markers at boundaries */}
-                {fills.length > 0 && (
-                  <div className="fill-markers-container">
-                    {fills.map((fill) => {
-                      const positionPercent = (fill.time / totalDuration) * 100;
-                      return (
-                        <div
-                          key={fill.id}
-                          className="fill-marker"
-                          style={{ left: `${positionPercent}%` }}
-                          title={`Fill at ${fill.time.toFixed(1)}s\nStems: ${fill.stemRoles.join(', ')}\nConfidence: ${(fill.confidence * 100).toFixed(0)}%`}
-                        >
-                          ⚡
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+            {/* 5-Layer Region Map View */}
+            {loadingLanes ? (
+              <div className="loading-state">
+                <p>Loading call/response lanes...</p>
               </div>
-
-              <div className="region-blocks-container">
-                {regions.map((region) => {
-                  // Get subregions for this region
-                  const subregions = subregionsByRegionId[region.id] || null;
-                  
-                  return (
-                    <RegionBlock
-                      key={region.id}
-                      region={region}
-                      totalDuration={totalDuration}
-                      motifs={motifs}
-                      motifGroups={motifGroups}
-                      highlightedGroupId={highlightedGroupId}
-                      onMotifHover={setHighlightedGroupId}
-                      subregions={subregions}
-                      bpm={120} // TODO: Get BPM from context or reference bundle
-                      showMotifDots={false} // Use DNA lanes instead of old dot overlay
-                    />
-                  );
-                })}
+            ) : lanesError ? (
+              <div className="error-state">
+                <p>Error loading lanes: {lanesError.message}</p>
               </div>
-            </div>
+            ) : (
+              <FiveLayerRegionMap
+                regions={regions}
+                lanes={callResponseLanesData?.lanes ?? []}
+                bpm={130} // TODO: Get BPM from context or reference bundle
+                totalDuration={totalDuration}
+              />
+            )}
 
             <div className="region-list">
               <h3>Region Details</h3>
