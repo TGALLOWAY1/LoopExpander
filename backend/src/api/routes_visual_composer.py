@@ -133,12 +133,72 @@ async def get_visual_composer_annotations(project_id: str):
         # Return with camelCase field names
         return final_annotations.model_dump(by_alias=True)
     
+    except ValueError as ve:
+        # Validation errors
+        logger.error(f"Validation error getting annotations for project {project_id}: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid request: {str(ve)}"
+        )
     except Exception as e:
-        logger.error(f"Error getting annotations for project {project_id}: {e}", exc_info=True)
+        # Unexpected errors
+        logger.error(f"Unexpected error getting annotations for project {project_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve annotations: {str(e)}"
         )
+
+
+def validate_annotations(annotations: VisualComposerAnnotations, project_id: str) -> None:
+    """
+    Validate annotations payload and log warnings for issues.
+    
+    Args:
+        annotations: Annotations to validate
+        project_id: Expected project ID
+    
+    Raises:
+        HTTPException with 400 status if validation fails critically
+    """
+    # Check project ID match (non-critical, we'll override, but log)
+    if annotations.projectId != project_id:
+        logger.warning(
+            f"Project ID mismatch: path={project_id}, payload={annotations.projectId}. "
+            f"Overriding payload projectId to match path."
+        )
+    
+    # Get known regions for validation
+    known_regions = REFERENCE_REGIONS.get(project_id, [])
+    known_region_ids = {r.id for r in known_regions}
+    
+    # Validate region IDs exist (log warning, don't reject)
+    for region_ann in annotations.regions:
+        if known_regions and region_ann.regionId not in known_region_ids:
+            logger.warning(
+                f"Region ID {region_ann.regionId} in annotations not found in known regions. "
+                f"Known region IDs: {list(known_region_ids)}"
+            )
+        
+        # Check for overlapping blocks in the same lane (log warning)
+        blocks_by_lane: dict[str, list] = {}
+        for block in region_ann.blocks:
+            if block.laneId not in blocks_by_lane:
+                blocks_by_lane[block.laneId] = []
+            blocks_by_lane[block.laneId].append(block)
+        
+        for lane_id, blocks in blocks_by_lane.items():
+            # Sort blocks by startBar
+            sorted_blocks = sorted(blocks, key=lambda b: b.startBar)
+            for i in range(len(sorted_blocks) - 1):
+                current = sorted_blocks[i]
+                next_block = sorted_blocks[i + 1]
+                # Check if blocks overlap (endBar > next startBar)
+                if current.endBar > next_block.startBar:
+                    logger.warning(
+                        f"Overlapping blocks detected in region {region_ann.regionId}, lane {lane_id}: "
+                        f"block {current.id} (bars {current.startBar}-{current.endBar}) overlaps with "
+                        f"block {next_block.id} (bars {next_block.startBar}-{next_block.endBar})"
+                    )
 
 
 @router.post("/{project_id}/annotations")
@@ -157,8 +217,9 @@ async def create_or_update_visual_composer_annotations(
         JSON with stored annotations data
     
     Raises:
-        400 if project_id in payload doesn't match path parameter
-        500 if there's an error saving annotations
+        400 if validation fails (invalid data structure)
+        422 if Pydantic validation fails
+        500 if there's an unexpected error saving annotations
     """
     logger.info(f"Creating/updating Visual Composer annotations for project_id: {project_id}")
     
@@ -171,6 +232,17 @@ async def create_or_update_visual_composer_annotations(
             )
             annotations.projectId = project_id
         
+        # Validate annotations (logs warnings, doesn't reject unless critical)
+        try:
+            validate_annotations(annotations, project_id)
+        except ValueError as ve:
+            # Critical validation error
+            logger.error(f"Validation error for project {project_id}: {ve}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid annotations data: {str(ve)}"
+            )
+        
         # Save annotations
         save_annotations(annotations)
         logger.info(f"Stored annotations for project {project_id}: {len(annotations.regions)} regions")
@@ -178,8 +250,19 @@ async def create_or_update_visual_composer_annotations(
         # Return stored annotations with camelCase field names
         return annotations.model_dump(by_alias=True)
     
+    except HTTPException:
+        # Re-raise HTTP exceptions (validation errors)
+        raise
+    except ValueError as ve:
+        # Pydantic validation errors
+        logger.error(f"Pydantic validation error for project {project_id}: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Validation error: {str(ve)}"
+        )
     except Exception as e:
-        logger.error(f"Error saving annotations for project {project_id}: {e}", exc_info=True)
+        # Unexpected errors
+        logger.error(f"Unexpected error saving annotations for project {project_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save annotations: {str(e)}"

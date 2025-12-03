@@ -147,12 +147,14 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     annotations: vcAnnotations,
     setAnnotations: setVcAnnotations,
     isLoading: isLoadingAnnotations,
-    error: annotationsError,
+    error: saveError, // Save errors
+    loadError, // Initial load errors
     saveAnnotations: saveVcAnnotations,
     isSaving,
     saveStatus,
     isDirty,
     forceSave,
+    retryLoad,
   } = useVisualComposerAnnotations(referenceId || null);
 
   // Build ordered region list from annotations (if available) or fallback to regions from context
@@ -807,6 +809,18 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
         <div className="visual-composer-empty">
           <h2>No Reference Loaded</h2>
           <p>Please load a reference track and analyze it before using Visual Composer.</p>
+          {loadError && (
+            <div className="load-error-badge" style={{ marginTop: '1rem', maxWidth: '500px' }}>
+              <span className="error-text">Failed to load annotations: {loadError.message}</span>
+              <button
+                className="retry-button"
+                onClick={retryLoad}
+                disabled={isLoadingAnnotations}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <button className="back-button" onClick={onBack}>
             Back to Region Map
           </button>
@@ -865,7 +879,9 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
               <span className="save-status saved">All changes saved</span>
             )}
             {saveStatus === 'error' && (
-              <span className="save-status error">Save failed</span>
+              <span className="save-status error" title={saveError?.message}>
+                Save failed
+              </span>
             )}
             {saveStatus === 'idle' && isDirty && (
               <span className="save-status unsaved">Unsaved changes</span>
@@ -874,10 +890,17 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
               <span className="save-status saved">All changes saved</span>
             )}
           </div>
-          {annotationsError && (
-            <span className="save-status error">
-              Error: {annotationsError.message}
-            </span>
+          {loadError && (
+            <div className="load-error-badge">
+              <span className="error-text">Failed to load annotations</span>
+              <button
+                className="retry-button"
+                onClick={retryLoad}
+                disabled={isLoadingAnnotations}
+              >
+                Retry
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -36,6 +36,7 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [isDirty, setIsDirty] = useState(false);
+  const [loadError, setLoadError] = useState<Error | null>(null); // Separate error for initial load
   
   // Ref to track autosave timeout
   const autosaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,54 +44,58 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
   // Ref to track the last saved annotations (for dirty detection)
   const lastSavedAnnotationsRef = useRef<VcAnnotations | null>(null);
 
-  // Load annotations on mount or when projectId changes
-  useEffect(() => {
+  // Load annotations function (can be called for retry)
+  const loadAnnotations = useCallback(async () => {
     if (!projectId) {
       setAnnotations(null);
       setIsLoading(false);
       setError(null);
+      setLoadError(null);
       setIsDirty(false);
       lastSavedAnnotationsRef.current = null;
       return;
     }
 
-    let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
     setError(null);
     setIsDirty(false);
     
-    getVisualComposerAnnotations(projectId)
-      .then((data) => {
-        if (!cancelled) {
-          setAnnotations(data);
-          setError(null);
-          lastSavedAnnotationsRef.current = JSON.parse(JSON.stringify(data)); // Deep copy for comparison
-          setSaveStatus('idle');
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-          // On error, initialize with empty structure
+    try {
+      const data = await getVisualComposerAnnotations(projectId);
+      setAnnotations(data);
+      setError(null);
+      setLoadError(null);
+      lastSavedAnnotationsRef.current = JSON.parse(JSON.stringify(data)); // Deep copy for comparison
+      setSaveStatus('idle');
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setLoadError(error);
+      // On error, initialize with empty structure but DON'T wipe existing annotations
+      // This preserves in-memory state if user has unsaved edits
+      setAnnotations(prev => {
+        if (!prev) {
           const emptyAnnotations = {
             projectId,
             regions: [],
           };
-          setAnnotations(emptyAnnotations);
           lastSavedAnnotationsRef.current = JSON.parse(JSON.stringify(emptyAnnotations));
-          setSaveStatus('idle');
+          return emptyAnnotations;
         }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        return prev; // Keep existing annotations
       });
-
-    return () => {
-      cancelled = true;
-    };
+      // Don't set error state here - use loadError instead to distinguish from save errors
+      setSaveStatus('idle');
+    } finally {
+      setIsLoading(false);
+    }
   }, [projectId]);
+
+  // Load annotations on mount or when projectId changes
+  useEffect(() => {
+    loadAnnotations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]); // loadAnnotations is stable (only depends on projectId)
 
   // Internal save function (shared by autosave and manual save)
   const performSave = useCallback(async (): Promise<void> => {
@@ -190,12 +195,14 @@ export function useVisualComposerAnnotations(projectId: string | null | undefine
     annotations,
     setAnnotations: setAnnotationsWithAutosave,
     isLoading,
-    error,
+    error, // Save errors
+    loadError, // Initial load errors (for retry)
     saveAnnotations,
     isSaving,
     saveStatus,
     isDirty,
     forceSave,
+    retryLoad: loadAnnotations, // Retry function for initial load failures
   };
 }
 
