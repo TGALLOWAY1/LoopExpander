@@ -994,7 +994,7 @@ async def get_annotations(reference_id: str):
     if not VISUAL_COMPOSER_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Visual Composer annotations feature is disabled"
+            detail="Visual Composer disabled"
         )
     
     logger.info(f"Getting annotations for reference_id: {reference_id}")
@@ -1042,7 +1042,7 @@ async def create_or_update_annotations(
     if not VISUAL_COMPOSER_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Visual Composer annotations feature is disabled"
+            detail="Visual Composer disabled"
         )
     
     logger.info(f"Creating/updating annotations for reference_id: {reference_id}")

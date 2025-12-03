@@ -95,7 +95,7 @@ def test_get_annotations_when_feature_disabled(client, setup_test_data):
         
         response = client.get(f"/api/reference/{reference_id}/annotations")
         assert response.status_code == 404
-        assert "disabled" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "Visual Composer disabled"
     finally:
         config.VISUAL_COMPOSER_ENABLED = original_value
 
@@ -120,7 +120,7 @@ def test_post_annotations_when_feature_disabled(client, setup_test_data):
             json=annotations_data
         )
         assert response.status_code == 404
-        assert "disabled" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "Visual Composer disabled"
     finally:
         config.VISUAL_COMPOSER_ENABLED = original_value
 
