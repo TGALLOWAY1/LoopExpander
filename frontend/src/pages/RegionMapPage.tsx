@@ -280,13 +280,32 @@ function RegionMapPage(): JSX.Element {
               <span>Strict (0.0)</span>
               <span>Loose (1.0)</span>
             </div>
-            <div className="motif-pause-control" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="motif-pause-control" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="motif-pause-button"
                 onClick={() => setIsMotifPaused(prev => !prev)}
               >
                 {isMotifPaused ? 'Resume Motif Analysis' : 'Pause Motif Analysis'}
+              </button>
+              <button
+                type="button"
+                className="reanalyze-button"
+                onClick={handleReanalyze}
+                disabled={loadingMotifs || loadingCallResponse}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: loadingMotifs || loadingCallResponse ? 'not-allowed' : 'pointer',
+                  opacity: loadingMotifs || loadingCallResponse ? 0.6 : 1,
+                  fontSize: '0.9rem',
+                  fontWeight: 500
+                }}
+              >
+                {loadingMotifs || loadingCallResponse ? 'Re-analyzing...' : 'Re-run Analysis'}
               </button>
               {isMotifPaused && (
                 <span className="motif-paused-indicator" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
