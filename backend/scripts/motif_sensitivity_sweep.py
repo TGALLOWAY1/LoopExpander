@@ -1,165 +1,220 @@
 """
-Diagnostic script to sweep through motif sensitivity configurations and log results.
+Diagnostic script to sweep through motif sensitivity configurations and generate a report.
 
-This script helps debug whether sensitivity is the reason for seeing 0 motif groups
-or call-response patterns. It runs motif detection multiple times with different
-sensitivity values and logs the number of motifs per stem for each configuration.
+This script runs motif + grouping + call/response analysis multiple times with different
+sensitivity configs and prints a compact tabular report per run showing:
+- total motifs per stem
+- motif groups per stem
+- call/response pairs per stem
+
+This helps choose a good sensitivity range when the lanes look over-segmented.
 """
 import sys
 import logging
 from pathlib import Path
 from collections import Counter
+from typing import List
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models.store import REFERENCE_BUNDLES, REFERENCE_REGIONS
 from src.analysis.motif_detector.config import MotifSensitivityConfig, normalize_sensitivity_config
-from src.analysis.motif_detector.motif_detector import detect_motifs
+from src.analysis.motif_detector.motif_detector import detect_motifs, MotifInstance, MotifGroup
+from src.analysis.call_response_detector.call_response_detector import detect_call_response, CallResponseConfig
 
 logger = logging.getLogger(__name__)
 
-# Test configurations to sweep through
-TEST_CONFIGS: list[MotifSensitivityConfig] = [
+# Sensitivity grid to sweep through
+SENSITIVITY_GRID: List[MotifSensitivityConfig] = [
+    # Uniform settings
     {"drums": 0.2, "bass": 0.2, "vocals": 0.2, "instruments": 0.2},
     {"drums": 0.4, "bass": 0.4, "vocals": 0.4, "instruments": 0.4},
     {"drums": 0.6, "bass": 0.6, "vocals": 0.6, "instruments": 0.6},
     {"drums": 0.8, "bass": 0.8, "vocals": 0.8, "instruments": 0.8},
+    # Example "drums stricter, bass looser"
+    {"drums": 0.3, "bass": 0.6, "vocals": 0.5, "instruments": 0.5},
 ]
+
+
+def summarize_motifs(motifs: List[MotifInstance]) -> Counter:
+    """Count motifs by stem_role (stem_category)."""
+    return Counter([m.stem_role for m in motifs])
+
+
+def summarize_groups(motif_groups: List[MotifGroup]) -> Counter:
+    """
+    Count motif groups by stem.
+    
+    Each group's members are checked for their stem_role, and the group
+    is counted for each unique stem it contains.
+    """
+    stem_counts = Counter()
+    for group in motif_groups:
+        # Get unique stems from group members
+        stems = {m.stem_role for m in group.members if hasattr(m, 'stem_role')}
+        # If a group somehow mixes stems, count each stem represented
+        for stem in stems:
+            if stem in ["drums", "bass", "vocals", "instruments"]:  # Only count valid stems
+                stem_counts[stem] += 1
+    return stem_counts
+
+
+def summarize_pairs(pairs) -> Counter:
+    """
+    Count call/response pairs by stem.
+    
+    Uses from_stem_role (the call stem) to categorize pairs.
+    """
+    return Counter([p.from_stem_role for p in pairs if hasattr(p, 'from_stem_role')])
 
 
 def run_sweep(reference_id: str):
     """
-    Run motif detection with different sensitivity configurations and log results.
+    Run motif + grouping + call/response analysis with different sensitivity configs.
+    
+    Prints a compact tabular report showing motifs, groups, and pairs per stem.
     
     Args:
         reference_id: ID of the reference bundle to test
     """
-    logger.info("=" * 80)
-    logger.info(f"Starting motif sensitivity sweep for reference: {reference_id}")
-    logger.info("=" * 80)
-    
     # Load reference bundle
+    # TODO: Adapt load_reference_by_id to your actual storage layer
     if reference_id not in REFERENCE_BUNDLES:
-        logger.error(f"Reference {reference_id} not found in REFERENCE_BUNDLES")
-        logger.error(f"Available references: {list(REFERENCE_BUNDLES.keys())}")
+        print(f"ERROR: Reference {reference_id} not found in REFERENCE_BUNDLES")
+        print(f"Available references: {list(REFERENCE_BUNDLES.keys())}")
         return
     
     bundle = REFERENCE_BUNDLES[reference_id]
-    logger.info(f"Loaded reference bundle: {bundle}")
-    logger.info(f"BPM: {bundle.bpm}")
     
     # Load regions (required for motif detection)
     if reference_id not in REFERENCE_REGIONS:
-        logger.error(f"Regions not found for reference {reference_id}. Run /analyze first.")
-        logger.error("Regions are required for motif detection.")
+        print(f"ERROR: Regions not found for reference {reference_id}. Run /analyze first.")
         return
     
     regions = REFERENCE_REGIONS[reference_id]
-    logger.info(f"Loaded {len(regions)} regions")
     
-    # TODO: Motif features are computed on-the-fly in detect_motifs
-    # The function extracts features from audio segments during detection
-    # No separate feature loading step is needed
+    # TODO: If your pipeline precomputes features, add that here and reuse
+    # features = compute_motif_features(reference)
     
-    results = []
+    print("=== Motif Sensitivity Sweep ===")
+    print(f"Reference: {reference_id}")
+    print(f"BPM: {bundle.bpm}")
+    print(f"Regions: {len(regions)}")
+    print()
     
-    # Run detection with each test configuration
-    for i, cfg in enumerate(TEST_CONFIGS, 1):
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info(f"Test {i}/{len(TEST_CONFIGS)}: Sensitivity sweep config: {cfg}")
-        logger.info("=" * 80)
-        
+    # Print table header
+    header = (
+        "idx",
+        "drums",
+        "bass",
+        "vox",
+        "inst",
+        "motifs_dr",
+        "motifs_bs",
+        "motifs_vx",
+        "motifs_in",
+        "groups_dr",
+        "groups_bs",
+        "groups_vx",
+        "groups_in",
+        "pairs_dr",
+        "pairs_bs",
+        "pairs_vx",
+        "pairs_in",
+    )
+    print("\t".join(header))
+    
+    # Run analysis with each sensitivity configuration
+    for idx, cfg in enumerate(SENSITIVITY_GRID):
         try:
             # Normalize config to ensure values are in safe range
-            normalized_cfg = normalize_sensitivity_config(cfg)
-            if normalized_cfg != cfg:
-                logger.info(f"Config normalized: {cfg} -> {normalized_cfg}")
+            norm_cfg = normalize_sensitivity_config(cfg)
+            logger.info("=== Sweep %d cfg=%s ===", idx, norm_cfg)
             
-            # Run motif detection with this configuration
-            # NOTE: exclude_full_mix=True for stem-only analysis (matching production behavior)
-            instances, groups = detect_motifs(
-                bundle,
-                regions,
-                sensitivity_config=normalized_cfg,
-                exclude_full_mix=True
+            # Run motif analysis with this sensitivity
+            # TODO: Adapt this call to your real API; we want motifs + motif_groups out
+            instances, motif_groups = detect_motifs(
+                reference_bundle=bundle,
+                regions=regions,
+                sensitivity_config=norm_cfg,
+                exclude_full_mix=True  # Stem-only analysis
             )
             
-            # Count motifs by stem
-            total = len(instances)
-            by_stem = Counter([inst.stem_role for inst in instances])
+            # Run call/response based on these motifs
+            # TODO: Adapt detect_call_response call to your real API
+            call_response_config = CallResponseConfig(
+                min_offset_bars=0.5,
+                max_offset_bars=4.0,
+                min_similarity=0.7,
+                min_confidence=0.5,
+                use_full_mix=False  # Stem-only analysis
+            )
+            pairs = detect_call_response(
+                motifs=instances,
+                regions=regions,
+                bpm=bundle.bpm,
+                config=call_response_config
+            )
             
-            # Count groups by stem (if groups have stem_role info)
-            group_count = len(groups)
+            # Summarize results by stem
+            motifs_by_stem = summarize_motifs(instances)
+            groups_by_stem = summarize_groups(motif_groups)
+            pairs_by_stem = summarize_pairs(pairs)
             
-            # Store results
-            result = {
-                "config": normalized_cfg,
-                "total_instances": total,
-                "total_groups": group_count,
-                "by_stem": dict(by_stem)
-            }
-            results.append(result)
+            # Print table row
+            row = [
+                str(idx),
+                f"{norm_cfg['drums']:.2f}",
+                f"{norm_cfg['bass']:.2f}",
+                f"{norm_cfg['vocals']:.2f}",
+                f"{norm_cfg['instruments']:.2f}",
+                str(motifs_by_stem.get("drums", 0)),
+                str(motifs_by_stem.get("bass", 0)),
+                str(motifs_by_stem.get("vocals", 0)),
+                str(motifs_by_stem.get("instruments", 0)),
+                str(groups_by_stem.get("drums", 0)),
+                str(groups_by_stem.get("bass", 0)),
+                str(groups_by_stem.get("vocals", 0)),
+                str(groups_by_stem.get("instruments", 0)),
+                str(pairs_by_stem.get("drums", 0)),
+                str(pairs_by_stem.get("bass", 0)),
+                str(pairs_by_stem.get("vocals", 0)),
+                str(pairs_by_stem.get("instruments", 0)),
+            ]
+            print("\t".join(row))
             
-            # Log results
-            logger.info(f"Results for config {normalized_cfg}:")
-            logger.info(f"  Total motif instances: {total}")
-            logger.info(f"  Total motif groups: {group_count}")
-            logger.info(f"  Instances by stem: {dict(by_stem)}")
-            
-            # Log per-stem breakdown
-            for stem in ["drums", "bass", "vocals", "instruments"]:
-                count = by_stem.get(stem, 0)
-                logger.info(f"    {stem}: {count} instances")
-            
-            # Warn if no motifs found
-            if total == 0:
-                logger.warning(f"  ⚠️  No motifs detected with this configuration!")
-            elif total > 0:
-                logger.info(f"  ✓ Motifs detected successfully")
-                
         except Exception as e:
-            logger.error(f"Error running detection with config {cfg}: {e}", exc_info=True)
-            results.append({
-                "config": cfg,
-                "error": str(e)
-            })
+            logger.error(f"Error running sweep {idx} with config {cfg}: {e}", exc_info=True)
+            # Print error row
+            row = [
+                str(idx),
+                f"{cfg.get('drums', 0):.2f}",
+                f"{cfg.get('bass', 0):.2f}",
+                f"{cfg.get('vocals', 0):.2f}",
+                f"{cfg.get('instruments', 0):.2f}",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+            ]
+            print("\t".join(row))
     
-    # Summary
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info("SUMMARY")
-    logger.info("=" * 80)
-    
-    for i, result in enumerate(results, 1):
-        if "error" in result:
-            logger.info(f"Test {i}: ERROR - {result['error']}")
-        else:
-            cfg = result["config"]
-            total = result["total_instances"]
-            groups = result["total_groups"]
-            by_stem = result["by_stem"]
-            
-            logger.info(f"Test {i} (sensitivity={cfg.get('drums', 'N/A')}): "
-                       f"{total} instances, {groups} groups, by_stem={by_stem}")
-    
-    # Check if any config produced motifs
-    any_motifs = any(r.get("total_instances", 0) > 0 for r in results if "error" not in r)
-    
-    if not any_motifs:
-        logger.warning("")
-        logger.warning("⚠️  WARNING: No motifs detected with ANY configuration!")
-        logger.warning("This suggests the issue is NOT just sensitivity settings.")
-        logger.warning("Possible causes:")
-        logger.warning("  - Audio files may be too short or too quiet")
-        logger.warning("  - Feature extraction may be failing")
-        logger.warning("  - Segmentation may not be producing valid segments")
-        logger.warning("  - Clustering threshold may be too strict even at 0.2")
-    else:
-        logger.info("")
-        logger.info("✓ At least one configuration produced motifs")
-        logger.info("Sensitivity may be a factor, but motifs are being detected.")
+    print()
+    print("Legend:")
+    print("  idx: Configuration index")
+    print("  drums/bass/vox/inst: Sensitivity values for each stem")
+    print("  motifs_dr/bs/vx/in: Total motif instances per stem")
+    print("  groups_dr/bs/vx/in: Motif groups per stem")
+    print("  pairs_dr/bs/vx/in: Call/response pairs per stem")
 
 
 if __name__ == "__main__":
