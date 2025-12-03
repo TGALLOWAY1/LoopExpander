@@ -1,24 +1,55 @@
 /**
  * Visual Composer page for manual annotation of regions.
+ * 
+ * ANNOTATION MODEL AUDIT (P2-01):
+ * 
+ * TypeScript Types (from frontend/src/api/reference.ts):
+ * - ReferenceAnnotations: { referenceId: string; regions: RegionAnnotations[]; }
+ * - RegionAnnotations: { regionId: string; lanes: AnnotationLane[]; regionNotes?: string | null; }
+ * - AnnotationLane: { stemCategory: StemCategory; blocks: AnnotationBlock[]; }
+ * - AnnotationBlock: { id: string; startBar: number; endBar: number; label?: string | null; }
+ * 
+ * Backend Pydantic Models (from backend/src/models/annotations.py):
+ * - ReferenceAnnotations: { reference_id: str; regions: List[RegionAnnotations] }
+ * - RegionAnnotations: { region_id: str; lanes: List[AnnotationLane] }  [NOTE: NO regionNotes field!]
+ * - AnnotationLane: { stem_category: str; blocks: List[AnnotationBlock] }
+ * - AnnotationBlock: { id: str; start_bar: float; end_bar: float; label: Optional[str] }
+ * 
+ * Key Differences:
+ * 1. Naming: Backend uses snake_case (reference_id, region_id, start_bar, end_bar, stem_category)
+ *            Frontend uses camelCase (referenceId, regionId, startBar, endBar, stemCategory)
+ * 2. Missing Field: Backend RegionAnnotations lacks 'regionNotes' field that frontend expects
+ * 3. Type: Backend uses float for bars, frontend uses number (compatible but noted)
+ * 
+ * Data Flow:
+ * - Loading: getAnnotations() fetches from GET /api/reference/{id}/annotations
+ *            Backend returns snake_case via model_dump() (no aliases configured)
+ *            Frontend expects camelCase - POTENTIAL MISMATCH
+ * - Storage: Stored in ProjectContext.annotations (ReferenceAnnotations | null)
+ * - Local State: VisualComposerPage maps to localRegionAnnotations (RegionAnnotations)
+ *            via useEffect that finds existing RegionAnnotations by regionId
+ * - Saving: saveAnnotations() sends POST /api/reference/{id}/annotations
+ *            Frontend sends camelCase, backend expects snake_case - POTENTIAL MISMATCH
+ * 
+ * See docs/visual-composer-notes.md for full audit details.
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { 
   ReferenceAnnotations, 
   RegionAnnotations, 
   AnnotationLane, 
   AnnotationBlock,
-  StemCategory,
-  getAnnotations,
   saveAnnotations
 } from '../api/reference';
+import { LaneList } from '../components/visualComposer/LaneList';
+import { ComposerTimeline } from '../components/visualComposer/ComposerTimeline';
+import { NotesPanel } from '../components/visualComposer/NotesPanel';
 import './VisualComposerPage.css';
 
 interface VisualComposerPageProps {
   onBack: () => void;
 }
-
-const STEM_CATEGORIES: StemCategory[] = ['drums', 'bass', 'vocals', 'instruments'];
 
 function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const { 
@@ -36,16 +67,47 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   const [localRegionAnnotations, setLocalRegionAnnotations] = useState<RegionAnnotations>({
     regionId: regionId || '',
     lanes: [],
-    regionNotes: '',
+    blocks: [],
+    notes: '',
   });
 
-  const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
-  const [editingLaneId, setEditingLaneId] = useState<string | null>(null);
-  const [laneName, setLaneName] = useState<string>('');
+  // Block selection state
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  
+  // Audition state (for future audio playback)
+  const [lastAuditionRequest, setLastAuditionRequest] = useState<{
+    laneId: string;
+    startBar: number;
+    endBar: number;
+  } | null>(null);
+
+  // Legacy state (will be used for bar grid/block functionality in future prompts)
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Color palette for lanes (rotates through these colors)
+  const LANE_COLORS = [
+    '#FF6B6B', // Red
+    '#4ECDC4', // Teal
+    '#FFE66D', // Yellow
+    '#95E1D3', // Mint
+    '#F38181', // Coral
+    '#AA96DA', // Purple
+    '#FCBAD3', // Pink
+    '#A8E6CF', // Green
+  ];
+
+  // Helper to generate unique lane IDs
+  const createLaneId = useCallback(() => {
+    return `lane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
+  // Helper to generate unique block IDs
+  const createBlockId = useCallback(() => {
+    return `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
 
   // Update global annotations when local region annotations change
   const updateGlobalAnnotations = useCallback((updatedRegion: RegionAnnotations) => {
@@ -65,7 +127,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId: '',
         lanes: [],
-        regionNotes: '',
+        blocks: [],
+        notes: '',
       };
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
@@ -87,7 +150,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       const emptyRegionAnnotations: RegionAnnotations = {
         regionId,
         lanes: [],
-        regionNotes: '',
+        blocks: [],
+        notes: '',
       };
       isSyncingFromGlobalRef.current = true;
       setLocalRegionAnnotations(emptyRegionAnnotations);
@@ -131,67 +195,189 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     }
   }, [annotations, referenceId, debouncedSave]);
 
-  // Add a new lane
-  const handleAddLane = () => {
-    if (!regionId) return;
+  // ============================================================================
+  // Lane CRUD Helper Functions
+  // ============================================================================
 
+  /**
+   * Adds a new lane to localRegionAnnotations.
+   * Creates a lane with generated ID, default name, rotating color, and proper order.
+   * Automatically syncs to global annotations via useEffect.
+   */
+  const addLane = useCallback(() => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    const lanes = localRegionAnnotations.lanes || [];
+    const maxOrder = lanes.length > 0 
+      ? Math.max(...lanes.map(l => l.order ?? 0))
+      : -1;
+    const nextOrder = maxOrder + 1;
+    
+    // Rotate through color palette
+    const colorIndex = lanes.length % LANE_COLORS.length;
+    const color = LANE_COLORS[colorIndex];
+    
     const newLane: AnnotationLane = {
-      stemCategory: 'drums', // Default
-      blocks: [],
+      id: createLaneId(),
+      name: `Lane ${lanes.length + 1}`,
+      color,
+      collapsed: false,
+      order: nextOrder,
     };
 
-    setLocalRegionAnnotations(prev => ({
-      ...prev,
-      lanes: [...prev.lanes, newLane],
-    }));
-  };
-
-  // Toggle lane collapse
-  const toggleLaneCollapse = (laneIndex: number) => {
-    const key = `${regionId}_${laneIndex}`;
-    setCollapsedLanes(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
+    setLocalRegionAnnotations(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        lanes: [...(prev.lanes || []), newLane],
+      };
     });
-  };
+  }, [localRegionAnnotations, regionId, createLaneId]);
 
-  // Start editing lane name
-  const startEditingLane = (laneIndex: number) => {
-    const lane = localRegionAnnotations.lanes[laneIndex];
-    if (lane) {
-      setEditingLaneId(`${regionId}_${laneIndex}`);
-      setLaneName(lane.stemCategory);
-    }
-  };
+  /**
+   * Updates a lane by ID with a partial patch of properties.
+   * Finds the lane and applies the patch, then syncs to global annotations via useEffect.
+   */
+  const updateLane = useCallback((id: string, patch: Partial<AnnotationLane>) => {
+    if (!localRegionAnnotations || !id) return;
 
-  // Save lane name edit
-  const saveLaneEdit = () => {
-    if (!editingLaneId || !regionId) return;
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      return {
+        ...prev,
+        lanes: prev.lanes.map(lane => 
+          lane.id === id ? { ...lane, ...patch } : lane
+        ),
+      };
+    });
+  }, [localRegionAnnotations]);
 
-    const [, laneIndexStr] = editingLaneId.split('_');
-    const laneIndex = parseInt(laneIndexStr, 10);
-    const stemCategory = laneName.trim() as StemCategory;
+  /**
+   * Deletes a lane by ID and optionally removes all blocks that reference it.
+   * Syncs to global annotations via useEffect.
+   */
+  const deleteLane = useCallback((id: string) => {
+    if (!localRegionAnnotations || !id) return;
 
-    if (!STEM_CATEGORIES.includes(stemCategory)) {
-      alert('Invalid stem category. Must be one of: drums, bass, vocals, instruments');
-      return;
-    }
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      // Remove the lane
+      const updatedLanes = prev.lanes.filter(lane => lane.id !== id);
+      
+      // Optionally remove blocks that reference this lane
+      const updatedBlocks = prev.blocks?.filter(block => block.laneId !== id) || [];
+      
+      return {
+        ...prev,
+        lanes: updatedLanes,
+        blocks: updatedBlocks,
+      };
+    });
+  }, [localRegionAnnotations]);
 
-    setLocalRegionAnnotations(prev => ({
-      ...prev,
-      lanes: prev.lanes.map((lane, idx) =>
-        idx === laneIndex ? { ...lane, stemCategory } : lane
-      ),
-    }));
+  /**
+   * Reorders lanes based on an ordered list of lane IDs.
+   * Updates each lane's order property to match the new position.
+   * Syncs to global annotations via useEffect.
+   */
+  const reorderLanes = useCallback((orderedIds: string[]) => {
+    if (!localRegionAnnotations || !orderedIds || orderedIds.length === 0) return;
 
-    setEditingLaneId(null);
-    setLaneName('');
-  };
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.lanes) return prev;
+      
+      // Create a map of lane by ID for quick lookup
+      const laneMap = new Map(prev.lanes.map(lane => [lane.id, lane]));
+      
+      // Reorder lanes based on orderedIds and update their order values
+      const reorderedLanes = orderedIds
+        .map((id, index) => {
+          const lane = laneMap.get(id);
+          if (!lane) return null;
+          return { ...lane, order: index };
+        })
+        .filter((lane): lane is AnnotationLane => lane !== null);
+      
+      // Keep any lanes that weren't in orderedIds (shouldn't happen, but safe)
+      const existingIds = new Set(orderedIds);
+      const remainingLanes = prev.lanes
+        .filter(lane => !existingIds.has(lane.id))
+        .map((lane, index) => ({ ...lane, order: reorderedLanes.length + index }));
+      
+      return {
+        ...prev,
+        lanes: [...reorderedLanes, ...remainingLanes],
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  // ============================================================================
+  // Block CRUD Helper Functions
+  // ============================================================================
+
+  /**
+   * Adds a new block to localRegionAnnotations.
+   * Generates a unique ID and adds the block to the blocks array.
+   * Automatically syncs to global annotations via useEffect.
+   */
+  const addBlock = useCallback((partial: Omit<AnnotationBlock, 'id'>) => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    const newBlock: AnnotationBlock = {
+      id: createBlockId(),
+      ...partial,
+    };
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        blocks: [...(prev.blocks || []), newBlock],
+      };
+    });
+  }, [localRegionAnnotations, regionId, createBlockId]);
+
+  /**
+   * Updates a block by ID with a partial patch of properties.
+   * Finds the block and applies the patch, then syncs to global annotations via useEffect.
+   */
+  const updateBlock = useCallback((id: string, patch: Partial<AnnotationBlock>) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.blocks) return prev;
+      
+      return {
+        ...prev,
+        blocks: prev.blocks.map(block => 
+          block.id === id ? { ...block, ...patch } : block
+        ),
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  /**
+   * Deletes a block by ID from localRegionAnnotations.
+   * Removes the block from the blocks array and syncs to global annotations via useEffect.
+   */
+  const deleteBlock = useCallback((id: string) => {
+    if (!localRegionAnnotations || !id) return;
+
+    setLocalRegionAnnotations(prev => {
+      if (!prev || !prev.blocks) return prev;
+      
+      return {
+        ...prev,
+        blocks: prev.blocks.filter(block => block.id !== id),
+      };
+    });
+  }, [localRegionAnnotations]);
+
+  // ============================================================================
+  // Legacy Handlers (for bar grid/block functionality - to be used in future prompts)
+  // ============================================================================
 
   // Calculate bars for current region (simplified: assume 4/4 time, use duration)
   const getRegionBars = (): number => {
@@ -202,6 +388,99 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     return Math.ceil(currentRegion.duration / 2);
   };
 
+  // Handle block creation from timeline
+  const handleCreateBlock = useCallback((laneId: string, startBar: number) => {
+    if (!localRegionAnnotations || !regionId) return;
+
+    // Find the lane to get its color
+    const lane = localRegionAnnotations.lanes.find(l => l.id === laneId);
+    const laneColor = lane?.color || null;
+
+    // Create a 1-bar block
+    addBlock({
+      laneId,
+      startBar,
+      endBar: startBar + 1,
+      type: 'call',
+      color: laneColor,
+      label: null,
+      notes: null,
+    });
+  }, [localRegionAnnotations, regionId, addBlock]);
+
+  // Derive selected block from selectedBlockId
+  const selectedBlock = useMemo(() => {
+    if (!selectedBlockId || !localRegionAnnotations) return undefined;
+    return localRegionAnnotations.blocks.find(b => b.id === selectedBlockId);
+  }, [selectedBlockId, localRegionAnnotations]);
+
+  // Audition hook (stub implementation)
+  const handleAuditionBlock = useCallback((laneId: string, startBar: number, endBar: number) => {
+    console.log('[Audition] Block requested:', {
+      laneId,
+      startBar,
+      endBar,
+      duration: endBar - startBar,
+    });
+    
+    setLastAuditionRequest({
+      laneId,
+      startBar,
+      endBar,
+    });
+    
+    // TODO: Implement actual audio playback in future phase
+  }, []);
+
+  // Handle block selection and audition
+  const handleSelectBlock = useCallback((blockId: string) => {
+    setSelectedBlockId(blockId);
+    
+    // Find the block for audition
+    const block = localRegionAnnotations?.blocks.find(b => b.id === blockId);
+    if (block) {
+      // Find the lane to get laneId
+      const lane = localRegionAnnotations?.lanes.find(l => l.id === block.laneId);
+      if (lane) {
+        handleAuditionBlock(lane.id, block.startBar, block.endBar);
+      }
+    }
+  }, [localRegionAnnotations, handleAuditionBlock]);
+
+  // Handle block notes change
+  const handleBlockNotesChange = useCallback((blockId: string, notes: string) => {
+    updateBlock(blockId, { notes: notes.trim() || null });
+  }, [updateBlock]);
+
+  // Handle block update from timeline
+  const handleUpdateBlock = useCallback((blockId: string, patch: Partial<AnnotationBlock>) => {
+    if (!localRegionAnnotations || !blockId) return;
+
+    // Validate constraints
+    const block = localRegionAnnotations.blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    const barCount = getRegionBars();
+    const updatedPatch: Partial<AnnotationBlock> = { ...patch };
+
+    // Ensure startBar < endBar
+    if ('startBar' in updatedPatch || 'endBar' in updatedPatch) {
+      const newStartBar = updatedPatch.startBar ?? block.startBar;
+      const newEndBar = updatedPatch.endBar ?? block.endBar;
+      
+      if (newEndBar <= newStartBar) {
+        // Don't allow invalid ranges
+        return;
+      }
+
+      // Clamp to valid range [0, barCount]
+      updatedPatch.startBar = Math.max(0, Math.min(newStartBar, barCount));
+      updatedPatch.endBar = Math.max(updatedPatch.startBar! + 1, Math.min(newEndBar, barCount));
+    }
+
+    updateBlock(blockId, updatedPatch);
+  }, [localRegionAnnotations, updateBlock]);
+
   // Handle bar grid click/drag
   const handleBarGridMouseDown = (laneIndex: number, bar: number) => {
     setIsDragging(true);
@@ -209,16 +488,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     setDragLaneId(`${regionId}_${laneIndex}`);
   };
 
-  const handleBarGridMouseMove = (bar: number) => {
+  const handleBarGridMouseMove = (_bar: number) => {
     if (!isDragging || dragStart === null || !dragLaneId) return;
-
-    const [regionId, laneIndexStr] = dragLaneId.split('_');
-    const laneIndex = parseInt(laneIndexStr, 10);
-    const startBar = Math.min(dragStart, bar);
-    const endBar = Math.max(dragStart, bar) + 1; // Make end exclusive
-
-    // Don't create blocks with zero or negative length
-    if (endBar <= startBar) return;
 
     // Create or update block (will be finalized on mouse up)
     // For now, we'll just track the drag
@@ -235,27 +506,26 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       if (endBar > startBar) {
         const lane = localRegionAnnotations.lanes[laneIndex];
         if (lane) {
-          // Check if block overlaps with existing blocks
-          const overlaps = lane.blocks.some(
-            b => (startBar < b.endBar && endBar > b.startBar)
+          // Check if block overlaps with existing blocks in this lane
+          const laneBlocks = localRegionAnnotations.blocks.filter(b => b.laneId === lane.id);
+          const overlaps = laneBlocks.some(
+            (b: AnnotationBlock) => (startBar < b.endBar && endBar > b.startBar)
           );
 
           if (!overlaps) {
-            // Create new block
+            // Create new block at region level
             const newBlock: AnnotationBlock = {
               id: `block_${Date.now()}`,
+              laneId: lane.id,
               startBar,
               endBar,
+              type: 'custom',
               label: null,
             };
 
             setLocalRegionAnnotations(prev => ({
               ...prev,
-              lanes: prev.lanes.map((l, idx) =>
-                idx === laneIndex
-                  ? { ...l, blocks: [...l.blocks, newBlock] }
-                  : l
-              ),
+              blocks: [...prev.blocks, newBlock],
             }));
           }
         }
@@ -268,31 +538,28 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   };
 
   // Delete block
-  const handleDeleteBlock = (laneIndex: number, blockId: string) => {
+  const handleDeleteBlock = (blockId: string) => {
     if (!regionId) return;
 
     setLocalRegionAnnotations(prev => ({
       ...prev,
-      lanes: prev.lanes.map((lane, idx) =>
-        idx === laneIndex
-          ? {
-              ...lane,
-              blocks: lane.blocks.filter(b => b.id !== blockId),
-            }
-          : lane
-      ),
+      blocks: prev.blocks.filter(b => b.id !== blockId),
     }));
   };
 
-  // Update region notes
-  const handleRegionNotesChange = (notes: string) => {
+  // Update region notes (with debouncing)
+  const handleRegionNotesChange = useCallback((notes: string) => {
     if (!regionId) return;
 
+    // Update local state immediately for responsive UI
     setLocalRegionAnnotations(prev => ({
       ...prev,
-      regionNotes: notes,
+      notes: notes,
     }));
-  };
+
+    // Debounce is handled by the existing useEffect that syncs localRegionAnnotations to global
+    // The debounced save to backend is already handled by debouncedSave
+  }, [regionId]);
 
   // Navigation
   const handlePrevRegion = () => {
@@ -321,9 +588,6 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
       </div>
     );
   }
-
-  const totalBars = getRegionBars();
-  const regionKey = `${regionId}_${currentRegionIndex}`;
 
   return (
     <div className="visual-composer-page">
@@ -358,124 +622,53 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
       <div className="visual-composer-content">
         <div className="lanes-section">
-          <div className="lanes-header">
-            <h3>Annotation Lanes</h3>
-            <button className="add-lane-button" onClick={handleAddLane}>
-              + Add Lane
-            </button>
-          </div>
-
-          <div className="lanes-list">
-            {localRegionAnnotations.lanes.map((lane, laneIndex) => {
-              const laneKey = `${regionKey}_${laneIndex}`;
-              const isCollapsed = collapsedLanes.has(laneKey);
-              const isEditing = editingLaneId === laneKey;
-
-              return (
-                <div key={laneIndex} className="lane-item">
-                  <div className="lane-header">
-                    {isEditing ? (
-                      <div className="lane-edit">
-                        <input
-                          type="text"
-                          value={laneName}
-                          onChange={(e) => setLaneName(e.target.value)}
-                          onBlur={saveLaneEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              saveLaneEdit();
-                            } else if (e.key === 'Escape') {
-                              setEditingLaneId(null);
-                              setLaneName('');
-                            }
-                          }}
-                          autoFocus
-                        />
-                      </div>
-                    ) : (
-                      <div className="lane-title">
-                        <span onClick={() => startEditingLane(laneIndex)}>
-                          {lane.stemCategory}
-                        </span>
-                        <button
-                          className="collapse-button"
-                          onClick={() => toggleLaneCollapse(laneIndex)}
-                        >
-                          {isCollapsed ? '▼' : '▲'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {!isCollapsed && (
-                    <div className="lane-content">
-                      <div className="bar-grid-container">
-                        <div className="bar-grid">
-                          {Array.from({ length: totalBars }, (_, i) => {
-                            const bar = i;
-                            const block = lane.blocks.find(
-                              b => bar >= b.startBar && bar < b.endBar
-                            );
-                            const isStart = lane.blocks.some(b => b.startBar === bar);
-                            const isEnd = lane.blocks.some(b => b.endBar === bar);
-
-                            return (
-                              <div
-                                key={bar}
-                                className={`bar-cell ${block ? 'has-block' : ''} ${isStart ? 'block-start' : ''} ${isEnd ? 'block-end' : ''}`}
-                                onMouseDown={() => handleBarGridMouseDown(laneIndex, bar)}
-                                onMouseMove={(e) => {
-                                  if (isDragging) {
-                                    handleBarGridMouseMove(bar);
-                                  }
-                                }}
-                                onMouseUp={() => handleBarGridMouseUp(bar)}
-                                onMouseLeave={() => {
-                                  if (isDragging) {
-                                    handleBarGridMouseUp(bar);
-                                  }
-                                }}
-                              >
-                                {bar % 4 === 0 && <span className="bar-label">{bar}</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="blocks-list">
-                        {lane.blocks.map((block) => (
-                          <div key={block.id} className="block-item">
-                            <span>
-                              Bar {block.startBar} - {block.endBar}
-                              {block.label && `: ${block.label}`}
-                            </span>
-                            <button
-                              className="delete-button"
-                              onClick={() => handleDeleteBlock(laneIndex, block.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {!localRegionAnnotations ? (
+            <div className="lanes-empty-state">
+              <p>No region annotations available. Please select a region.</p>
+            </div>
+          ) : (
+            <LaneList
+              lanes={localRegionAnnotations.lanes ?? []}
+              onChangeLane={updateLane}
+              onDeleteLane={deleteLane}
+              onReorderLanes={reorderLanes}
+              onAddLane={addLane}
+            />
+          )}
         </div>
 
-        <div className="region-notes-section">
-          <h3>Region Notes</h3>
-          <textarea
-            className="region-notes-input"
-            value={localRegionAnnotations.regionNotes || ''}
-            onChange={(e) => handleRegionNotesChange(e.target.value)}
-            placeholder="Add notes about this region..."
-            rows={6}
-          />
+        {/* Timeline area */}
+        {localRegionAnnotations && localRegionAnnotations.lanes.length > 0 && (
+          <div className="timeline-section">
+            <ComposerTimeline
+              regionAnnotations={localRegionAnnotations}
+              barCount={getRegionBars()}
+              onCreateBlock={handleCreateBlock}
+              onSelectBlock={handleSelectBlock}
+              onUpdateBlock={handleUpdateBlock}
+            />
+          </div>
+        )}
+
+        <div className="visual-composer-sidebar">
+          <div className="region-notes-section">
+            <h3>Region Notes</h3>
+            <textarea
+              className="region-notes-input"
+              value={localRegionAnnotations?.notes || ''}
+              onChange={(e) => handleRegionNotesChange(e.target.value)}
+              placeholder="Add notes about this region..."
+              rows={6}
+              disabled={!localRegionAnnotations}
+            />
+          </div>
+
+          <div className="block-notes-section">
+            <NotesPanel
+              selectedBlock={selectedBlock}
+              onChangeNotes={handleBlockNotesChange}
+            />
+          </div>
         </div>
       </div>
     </div>

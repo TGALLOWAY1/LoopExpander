@@ -1,0 +1,68 @@
+.lane-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #fff;
+  overflow: hidden;
+}
+
+.lane-list-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #f8f8f8;
+}
+
+.lane-list-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.lane-list-items {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.lane-list-empty {
+  padding: 24px;
+  text-align: center;
+  color: #999;
+}
+
+.lane-list-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.lane-list-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #e0e0e0;
+  background-color: #f8f8f8;
+}
+
+.lane-list-add-button {
+  width: 100%;
+  padding: 8px 16px;
+  border: 1px solid #4a90e2;
+  background-color: #4a90e2;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.lane-list-add-button:hover {
+  background-color: #357abd;
+  border-color: #357abd;
+}
+
+.lane-list-add-button:active {
+  background-color: #2a5f8f;
+  border-color: #2a5f8f;
+}
+

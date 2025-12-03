@@ -409,30 +409,42 @@ export async function fetchReferenceSubregions(
 }
 
 /**
- * Annotation block type matching backend model.
+ * Annotation block type (aligned with PRD).
+ * Blocks are stored at the region level and reference lanes via laneId.
  */
 export interface AnnotationBlock {
   id: string;
+  laneId: string;
   startBar: number;
   endBar: number;
+  color?: string | null;
+  type: 'call' | 'response' | 'variation' | 'fill' | 'custom';
   label?: string | null;
+  notes?: string | null;
 }
 
 /**
- * Annotation lane type matching backend model.
+ * Annotation lane type (aligned with PRD).
+ * Lanes are metadata containers; blocks are stored separately at region level.
  */
 export interface AnnotationLane {
-  stemCategory: StemCategory;
-  blocks: AnnotationBlock[];
+  id: string;
+  name: string;
+  color: string;
+  collapsed: boolean;
+  order: number;
 }
 
 /**
- * Region annotations type matching backend model.
+ * Region annotations type (aligned with PRD).
+ * Contains both lanes (metadata) and blocks (actual annotations).
  */
 export interface RegionAnnotations {
   regionId: string;
+  name?: string | null;
+  notes?: string | null;
   lanes: AnnotationLane[];
-  regionNotes?: string | null;
+  blocks: AnnotationBlock[];
 }
 
 /**
@@ -470,7 +482,19 @@ export async function getAnnotations(referenceId: string): Promise<ReferenceAnno
     throw new Error(error.detail || `Failed to fetch annotations with status ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // Normalize data with safe defaults for backward compatibility
+  return {
+    referenceId: data.referenceId || data.reference_id || referenceId,
+    regions: (data.regions || []).map((region: any) => ({
+      regionId: region.regionId || region.region_id || '',
+      name: region.name ?? null,
+      notes: region.notes ?? region.regionNotes ?? null,
+      lanes: region.lanes || [],
+      blocks: region.blocks || [],
+    })),
+  };
 }
 
 /**
