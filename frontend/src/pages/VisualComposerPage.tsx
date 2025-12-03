@@ -42,6 +42,7 @@ import {
   AnnotationBlock,
   saveAnnotations
 } from '../api/reference';
+import { LaneList } from '../components/visualComposer/LaneList';
 import './VisualComposerPage.css';
 
 interface VisualComposerPageProps {
@@ -68,9 +69,7 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     notes: '',
   });
 
-  const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set());
-  const [editingLaneId, setEditingLaneId] = useState<string | null>(null);
-  const [laneName, setLaneName] = useState<string>('');
+  // Legacy state (will be used for bar grid/block functionality in future prompts)
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragLaneId, setDragLaneId] = useState<string | null>(null);
@@ -298,60 +297,8 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
   }, [localRegionAnnotations]);
 
   // ============================================================================
-  // Legacy Handlers (to be replaced with helpers above in future UI updates)
+  // Legacy Handlers (for bar grid/block functionality - to be used in future prompts)
   // ============================================================================
-
-  // Add a new lane
-  const handleAddLane = () => {
-    addLane();
-  };
-
-  // Toggle lane collapse
-  const toggleLaneCollapse = (laneIndex: number) => {
-    const key = `${regionId}_${laneIndex}`;
-    setCollapsedLanes(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  };
-
-  // Start editing lane name
-  const startEditingLane = (laneIndex: number) => {
-    const lane = localRegionAnnotations.lanes[laneIndex];
-    if (lane) {
-      setEditingLaneId(`${regionId}_${laneIndex}`);
-      setLaneName(lane.name);
-    }
-  };
-
-  // Save lane name edit
-  const saveLaneEdit = () => {
-    if (!editingLaneId || !regionId) return;
-
-    const [, laneIndexStr] = editingLaneId.split('_');
-    const laneIndex = parseInt(laneIndexStr, 10);
-    const name = laneName.trim();
-
-    if (!name) {
-      alert('Lane name cannot be empty');
-      return;
-    }
-
-    setLocalRegionAnnotations(prev => ({
-      ...prev,
-      lanes: prev.lanes.map((lane, idx) =>
-        idx === laneIndex ? { ...lane, name } : lane
-      ),
-    }));
-
-    setEditingLaneId(null);
-    setLaneName('');
-  };
 
   // Calculate bars for current region (simplified: assume 4/4 time, use duration)
   const getRegionBars = (): number => {
@@ -466,9 +413,6 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
     );
   }
 
-  const totalBars = getRegionBars();
-  const regionKey = `${regionId}_${currentRegionIndex}`;
-
   return (
     <div className="visual-composer-page">
       <div className="visual-composer-header">
@@ -502,117 +446,29 @@ function VisualComposerPage({ onBack }: VisualComposerPageProps): JSX.Element {
 
       <div className="visual-composer-content">
         <div className="lanes-section">
-          <div className="lanes-header">
-            <h3>Annotation Lanes</h3>
-            <button className="add-lane-button" onClick={handleAddLane}>
-              + Add Lane
-            </button>
-          </div>
-
-          <div className="lanes-list">
-            {localRegionAnnotations.lanes.map((lane, laneIndex) => {
-              const laneKey = `${regionKey}_${laneIndex}`;
-              const isCollapsed = collapsedLanes.has(laneKey);
-              const isEditing = editingLaneId === laneKey;
-
-              return (
-                <div key={laneIndex} className="lane-item">
-                  <div className="lane-header">
-                    {isEditing ? (
-                      <div className="lane-edit">
-                        <input
-                          type="text"
-                          value={laneName}
-                          onChange={(e) => setLaneName(e.target.value)}
-                          onBlur={saveLaneEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              saveLaneEdit();
-                            } else if (e.key === 'Escape') {
-                              setEditingLaneId(null);
-                              setLaneName('');
-                            }
-                          }}
-                          autoFocus
-                        />
-                      </div>
-                    ) : (
-                      <div className="lane-title">
-                        <span onClick={() => startEditingLane(laneIndex)}>
-                          {lane.name}
-                        </span>
-                        <button
-                          className="collapse-button"
-                          onClick={() => toggleLaneCollapse(laneIndex)}
-                        >
-                          {isCollapsed ? '▼' : '▲'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {!isCollapsed && (
-                    <div className="lane-content">
-                      <div className="bar-grid-container">
-                        <div className="bar-grid">
-                          {Array.from({ length: totalBars }, (_, i) => {
-                            const bar = i;
-                            const laneBlocks = localRegionAnnotations.blocks.filter(b => b.laneId === lane.id);
-                            const block = laneBlocks.find(
-                              (b: AnnotationBlock) => bar >= b.startBar && bar < b.endBar
-                            );
-                            const isStart = laneBlocks.some((b: AnnotationBlock) => b.startBar === bar);
-                            const isEnd = laneBlocks.some((b: AnnotationBlock) => b.endBar === bar);
-
-                            return (
-                              <div
-                                key={bar}
-                                className={`bar-cell ${block ? 'has-block' : ''} ${isStart ? 'block-start' : ''} ${isEnd ? 'block-end' : ''}`}
-                                onMouseDown={() => handleBarGridMouseDown(laneIndex, bar)}
-                                onMouseMove={() => {
-                                  if (isDragging) {
-                                    handleBarGridMouseMove(bar);
-                                  }
-                                }}
-                                onMouseUp={() => handleBarGridMouseUp(bar)}
-                                onMouseLeave={() => {
-                                  if (isDragging) {
-                                    handleBarGridMouseUp(bar);
-                                  }
-                                }}
-                              >
-                                {bar % 4 === 0 && <span className="bar-label">{bar}</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="blocks-list">
-                        {localRegionAnnotations.blocks
-                          .filter((b: AnnotationBlock) => b.laneId === lane.id)
-                          .map((block: AnnotationBlock) => (
-                            <div key={block.id} className="block-item">
-                              <span>
-                                Bar {block.startBar} - {block.endBar}
-                                {block.label && `: ${block.label}`}
-                              </span>
-                              <button
-                                className="delete-button"
-                                onClick={() => handleDeleteBlock(block.id)}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {!localRegionAnnotations ? (
+            <div className="lanes-empty-state">
+              <p>No region annotations available. Please select a region.</p>
+            </div>
+          ) : (
+            <LaneList
+              lanes={localRegionAnnotations.lanes ?? []}
+              onChangeLane={updateLane}
+              onDeleteLane={deleteLane}
+              onReorderLanes={reorderLanes}
+              onAddLane={addLane}
+            />
+          )}
         </div>
+
+        {/* Lane content area - will be updated in future prompts */}
+        {localRegionAnnotations && localRegionAnnotations.lanes.length > 0 && (
+          <div className="lanes-content-area">
+            <p className="lanes-content-placeholder">
+              Lane content (bar grids, blocks) will be displayed here in future updates.
+            </p>
+          </div>
+        )}
 
         <div className="region-notes-section">
           <h3>Region Notes</h3>
