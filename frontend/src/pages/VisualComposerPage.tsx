@@ -1011,7 +1011,7 @@ function VisualComposerPage({
   // ============================================================================
 
   // Calculate bars for current region
-  // Prefer bar range from annotations, otherwise estimate from duration
+  // Prefer bar range from annotations, otherwise use region's startBar/endBar, or estimate from duration
   const getRegionBars = (): number => {
     if (!currentRegion) return 0;
 
@@ -1020,9 +1020,22 @@ function VisualComposerPage({
       return Math.ceil(currentRegionBarRange.endBar);
     }
 
-    // Fallback: rough estimate (1 bar = 2 seconds at 120 BPM)
+    // Fallback: use currentRegion.startBar/endBar if available (demo mode)
+    const regionWithBars = currentRegion as typeof currentRegion & {
+      startBar?: number | null;
+      endBar?: number | null;
+    };
+    if (
+      regionWithBars.startBar !== null &&
+      regionWithBars.startBar !== undefined &&
+      regionWithBars.endBar !== null &&
+      regionWithBars.endBar !== undefined
+    ) {
+      return Math.ceil(regionWithBars.endBar);
+    }
+
+    // Last fallback: rough estimate (1 bar = 2 seconds at 120 BPM)
     // For more accuracy, we'd need BPM from the bundle
-    // DEBUG: this may crash if currentRegion is undefined - accessing .duration without guard
     return Math.ceil((currentRegion?.duration || 0) / 2);
   };
 
@@ -1404,75 +1417,28 @@ function VisualComposerPage({
         </div>
       </div>
 
-      <div className="visual-composer-content">
-        {/* Waveform placeholder (demo mode) or real waveform */}
-        {currentRegion &&
-          (() => {
-            const regionWithBars = currentRegion as typeof currentRegion & {
-              startBar?: number | null;
-              endBar?: number | null;
-            };
-            const hasBarRange =
-              currentRegionBarRange ||
-              (regionWithBars?.startBar !== null &&
-                regionWithBars?.startBar !== undefined &&
-                regionWithBars?.endBar !== null &&
-                regionWithBars?.endBar !== undefined);
+      <div className="visual-composer-content-wrapper">
+        <div className="visual-composer-content">
+          {/* Waveform placeholder (demo mode) or real waveform */}
+          {/* Always show waveform section if we have a current region */}
+          {currentRegion && (
+            <div className="vc-waveform-section">
+              {demoMode ? (
+                <div className="vc-waveform-placeholder">
+                  Waveform demo placeholder (no audio in demo mode yet)
+                </div>
+              ) : (
+                // TODO: Add real waveform component when audio is available
+                <div className="vc-waveform-placeholder">
+                  Waveform (audio not yet implemented)
+                </div>
+              )}
+            </div>
+          )}
 
-            if (!hasBarRange) return null;
-
-            return (
-              <div className="vc-waveform-section">
-                {demoMode ? (
-                  <div
-                    className="vc-waveform-placeholder"
-                    style={{
-                      padding: "1rem",
-                      background: "#f0f0f0",
-                      borderRadius: "4px",
-                      textAlign: "center",
-                      color: "#666",
-                    }}
-                  >
-                    Waveform demo placeholder (no audio in demo mode yet)
-                  </div>
-                ) : (
-                  // TODO: Add real waveform component when audio is available
-                  <div
-                    className="vc-waveform-placeholder"
-                    style={{
-                      padding: "1rem",
-                      background: "#f0f0f0",
-                      borderRadius: "4px",
-                      textAlign: "center",
-                      color: "#666",
-                    }}
-                  >
-                    Waveform (audio not yet implemented)
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-        {/* Timeline area - show whenever currentRegion exists and we can calculate bar range */}
-        {(() => {
-          if (!currentRegion) return null;
-
-          const regionWithBars = currentRegion as typeof currentRegion & {
-            startBar?: number | null;
-            endBar?: number | null;
-          };
-          const hasBarRange =
-            currentRegionBarRange ||
-            (regionWithBars?.startBar !== null &&
-              regionWithBars?.startBar !== undefined &&
-              regionWithBars?.endBar !== null &&
-              regionWithBars?.endBar !== undefined);
-
-          if (!hasBarRange) return null;
-
-          return (
+          {/* Timeline area - show whenever currentRegion exists */}
+          {/* Always show timeline if we have a current region, even if barCount is 0 */}
+          {currentRegion && (
             <div className="timeline-section">
               <ComposerTimeline
                 regionAnnotations={
@@ -1489,10 +1455,9 @@ function VisualComposerPage({
                 onUpdateBlock={handleUpdateBlock}
               />
             </div>
-          );
-        })()}
+          )}
 
-        {/* Lanes section - show whenever currentRegion exists and localRegionAnnotations is not null */}
+          {/* Lanes section - show whenever currentRegion exists and localRegionAnnotations is not null */}
         {currentRegion && localRegionAnnotations ? (
           <div className="lanes-section">
             <div className="lanes-container">
@@ -1588,6 +1553,8 @@ function VisualComposerPage({
             </div>
           </div>
         )}
+
+        </div>
 
         <div className="visual-composer-sidebar">
           <div className="region-notes-section">
