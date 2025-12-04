@@ -35,53 +35,20 @@ export type ProjectState = {
 };
 
 /**
- * Default project state.
- */
-const defaultState: ProjectState = {
-  referenceId: null,
-  regions: [],
-  motifs: [],
-  motifGroups: [],
-  callResponsePairs: [],
-  fills: [],
-  subregionsByRegionId: {},
-  annotations: null,
-  setReferenceId: () => {
-    console.warn('setReferenceId called outside ProjectProvider');
-  },
-  setRegions: () => {
-    console.warn('setRegions called outside ProjectProvider');
-  },
-  setMotifs: () => {
-    console.warn('setMotifs called outside ProjectProvider');
-  },
-  setCallResponsePairs: () => {
-    console.warn('setCallResponsePairs called outside ProjectProvider');
-  },
-  setFills: () => {
-    console.warn('setFills called outside ProjectProvider');
-  },
-  setSubregions: () => {
-    console.warn('setSubregions called outside ProjectProvider');
-  },
-  setAnnotations: () => {
-    console.warn('setAnnotations called outside ProjectProvider');
-  },
-};
-
-/**
  * Project context.
+ * Use null as default to detect when used outside a provider.
  */
-const ProjectContext = createContext<ProjectState>(defaultState);
+const ProjectContext = createContext<ProjectState | null>(null);
 
 /**
  * Hook to access project context.
  * 
  * @returns ProjectState
+ * @throws Error if used outside a ProjectProvider
  */
 export function useProject(): ProjectState {
   const context = useContext(ProjectContext);
-  if (!context) {
+  if (context === null) {
     throw new Error('useProject must be used within a ProjectProvider');
   }
   return context;
@@ -96,8 +63,26 @@ interface ProjectProviderProps {
 
 /**
  * ProjectProvider component that wraps the app and provides project state.
+ * 
+ * Made robust to handle edge cases where props might be undefined.
  */
-export function ProjectProvider({ children }: ProjectProviderProps): JSX.Element {
+export function ProjectProvider(
+  props: ProjectProviderProps = { children: null }
+): JSX.Element {
+  // Temporary debug logging to verify props are received correctly
+  if (import.meta.env.MODE !== 'production') {
+    console.log('[ProjectProvider] props received:', props);
+  }
+  
+  // Defensive destructuring with logging for debugging
+  const { children } = props;
+  
+  // Log warning if mounted without children (helps catch misuse)
+  if (!children && import.meta.env.MODE !== 'production') {
+    console.warn(
+      '[ProjectProvider] Mounted without children. Check usage - ProjectProvider should wrap your app components.'
+    );
+  }
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [motifs, setMotifsState] = useState<MotifInstance[]>([]);

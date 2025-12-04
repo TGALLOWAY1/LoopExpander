@@ -1,5 +1,9 @@
 /**
  * Main App component.
+ * 
+ * NOTE: This app is wrapped in React.StrictMode (see main.tsx), which double-invokes
+ * effects in development. This may cause duplicate effect runs during debugging.
+ * We're currently debugging a sync loop in VisualComposerPage.
  */
 import { useState } from 'react';
 import { useProject } from './context/ProjectContext';

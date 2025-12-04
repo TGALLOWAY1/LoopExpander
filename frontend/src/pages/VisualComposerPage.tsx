@@ -152,6 +152,12 @@ function VisualComposerPage({
 }: VisualComposerPageProps): JSX.Element {
   const { referenceId, regions } = useProject();
 
+  // DEV: Render counter for debugging sync loops
+  const renderCountRef = useRef<number>(0);
+  if (__DEV__) {
+    renderCountRef.current += 1;
+  }
+
   // Component initialization
 
   // Create demo regions if in demo mode
@@ -290,6 +296,11 @@ function VisualComposerPage({
   // This ensures selectedRegionId is NEVER undefined after initial load if regions exist
   const selectedRegionId =
     regionId || (orderedRegions.length > 0 ? orderedRegions[0]?.id : undefined);
+
+  // DEV: Log render with region info
+  if (__DEV__) {
+    console.log(`[VC] render #${renderCountRef.current} region=${selectedRegionId}`);
+  }
 
   // Auto-select first region when regions become available and selectedRegionId is null/undefined
   // This ensures a region is always selected when regions exist
@@ -444,6 +455,11 @@ function VisualComposerPage({
   const localRegionAnnotationsRef = useRef<RegionAnnotations>(
     localRegionAnnotations,
   );
+  // DEV: Effect counter for global→local sync
+  const globalToLocalEffectCountRef = useRef<number>(0);
+  // TODO: Remove this safety fuse once the sync loop is resolved.
+  // Safety fuse: track run count to prevent infinite loops
+  const globalToLocalRunCountRef = useRef<number>(0);
 
   // Initialize vcAnnotations ONLY when it's null and regions are available
   // This should NOT depend on localRegionAnnotations or run on every render
@@ -469,8 +485,33 @@ function VisualComposerPage({
   // Sync from vcAnnotations to localRegionAnnotations when selectedRegionId changes
   // This effect should ONLY depend on [vcAnnotations, selectedRegionId]
   useEffect(() => {
+    // TODO: Remove this safety fuse once the sync loop is resolved.
+    // Safety fuse: abort if run count exceeds threshold to prevent infinite loops
+    globalToLocalRunCountRef.current += 1;
+    if (globalToLocalRunCountRef.current > 20) {
+      if (__DEV__) {
+        console.warn('[VC] ABORT vcAnnotations→local sync: run count exceeded');
+      }
+      return;
+    }
+
+    // DEV: Structured logging at effect start
+    if (__DEV__) {
+      globalToLocalEffectCountRef.current += 1;
+      console.log('[VC] global→local effect fired', {
+        runCount: globalToLocalRunCountRef.current,
+        effectCount: globalToLocalEffectCountRef.current,
+        selectedRegionId,
+        vcAnnotationsIsNull: vcAnnotations === null,
+        localRegionAnnotationsRefIsNull: localRegionAnnotationsRef.current === null,
+      });
+    }
+
     // Early return if prerequisites are missing
     if (!vcAnnotations || !selectedRegionId) {
+      if (__DEV__) {
+        console.log('[VC] global→local: no vcAnnotations or no selectedRegionId – exiting');
+      }
       // Only set empty localRegionAnnotations if we truly have no data
       if (!vcAnnotations && !selectedRegionId) {
         const emptyRegionAnnotations: RegionAnnotations = {
@@ -481,6 +522,7 @@ function VisualComposerPage({
         };
         isSyncingFromGlobalRef.current = true;
         setLocalRegionAnnotations(emptyRegionAnnotations);
+        localRegionAnnotationsRef.current = emptyRegionAnnotations;
         isSyncingFromGlobalRef.current = false;
         lastSyncedRegionIdRef.current = undefined;
         lastSyncedVcAnnotationsRef.current = null;
@@ -500,6 +542,9 @@ function VisualComposerPage({
       lastSyncedKey === vcAnnotationsKey
     ) {
       // Already synced this region with this vcAnnotations state
+      if (__DEV__) {
+        console.log('[VC] global→local: skipping – already synced this region/state combination');
+      }
       return;
     }
 
@@ -508,57 +553,69 @@ function VisualComposerPage({
       (r) => r.regionId === selectedRegionId,
     );
 
+    let newLocalAnnotations: RegionAnnotations | null = null;
+
     if (existingVcRegion) {
-      const newLocalAnnotations = vcRegionToRegionAnnotations(existingVcRegion);
-      // Only update if actually different from current local state
-      const currentLocalJson = JSON.stringify(
-        localRegionAnnotationsRef.current,
-      );
-      const newLocalJson = JSON.stringify(newLocalAnnotations);
-      if (currentLocalJson !== newLocalJson) {
-        isSyncingFromGlobalRef.current = true;
-        setLocalRegionAnnotations(newLocalAnnotations);
-        localRegionAnnotationsRef.current = newLocalAnnotations;
-        isSyncingFromGlobalRef.current = false;
+      if (__DEV__) {
+        console.log('[VC] global→local: using existingVcRegion – comparing to local');
       }
-      lastSyncedRegionIdRef.current = selectedRegionId;
-      lastSyncedVcAnnotationsRef.current = vcAnnotations;
+      newLocalAnnotations = vcRegionToRegionAnnotations(existingVcRegion);
     } else if (currentRegion) {
+      if (__DEV__) {
+        console.log('[VC] global→local: no existingVcRegion – creating emptyRegionAnnotations');
+      }
       // Create empty RegionAnnotations if not found in vcAnnotations
-      const emptyRegionAnnotations: RegionAnnotations = {
+      newLocalAnnotations = {
         regionId: selectedRegionId,
         lanes: [],
         blocks: [],
         notes: "",
       };
-
-      // Only update local state if it's different
-      const currentLocalJson = JSON.stringify(
-        localRegionAnnotationsRef.current,
-      );
-      const newLocalJson = JSON.stringify(emptyRegionAnnotations);
-      if (currentLocalJson !== newLocalJson) {
-        isSyncingFromGlobalRef.current = true;
-        setLocalRegionAnnotations(emptyRegionAnnotations);
-        localRegionAnnotationsRef.current = emptyRegionAnnotations;
-        isSyncingFromGlobalRef.current = false;
+    } else {
+      if (__DEV__) {
+        console.log('[VC] global→local: no currentRegion – exiting');
       }
+      return;
+    }
 
+    // DEEP comparison BEFORE calling setLocalRegionAnnotations
+    const currentLocalJson = JSON.stringify(localRegionAnnotationsRef.current);
+    const newLocalJson = JSON.stringify(newLocalAnnotations);
+    
+    if (currentLocalJson === newLocalJson) {
+      if (__DEV__) {
+        console.log('[VC] global→local: skipping setLocalRegionAnnotations (no diff)');
+      }
+      // Update tracking refs even if we don't update state
       lastSyncedRegionIdRef.current = selectedRegionId;
       lastSyncedVcAnnotationsRef.current = vcAnnotations;
+      return;
+    }
 
-      // Also ensure it's added to Vc annotations with region metadata
-      // Check if region already exists before adding
+    // Only when they differ: apply the update
+    if (__DEV__) {
+      console.log('[VC] global→local: applying setLocalRegionAnnotations');
+    }
+    
+    isSyncingFromGlobalRef.current = true;
+    setLocalRegionAnnotations(newLocalAnnotations);
+    localRegionAnnotationsRef.current = newLocalAnnotations;
+    isSyncingFromGlobalRef.current = false;
+    
+    lastSyncedRegionIdRef.current = selectedRegionId;
+    lastSyncedVcAnnotationsRef.current = vcAnnotations;
+
+    // If we created empty annotations and the region doesn't exist in vcAnnotations, add it
+    if (!existingVcRegion && currentRegion) {
       const regionExists = vcAnnotations.regions.some(
         (r) => r.regionId === selectedRegionId,
       );
       if (!regionExists) {
         const newVcRegion = regionAnnotationsToVcRegion(
-          emptyRegionAnnotations,
+          newLocalAnnotations,
           currentRegion,
         );
         // Use functional update to avoid dependency on vcAnnotations
-        // Set the ref BEFORE calling setVcAnnotations to prevent re-triggering
         setVcAnnotations((prev) => {
           if (!prev) return prev;
           // Double-check if region already exists (race condition guard)
@@ -580,34 +637,88 @@ function VisualComposerPage({
   // Use a ref to track if we've already updated for this regionId to prevent loops
   const lastUpdatedRegionIdRef = useRef<string | undefined>(undefined);
   const lastUpdatedLocalRef = useRef<string>("");
+  // DEV: Effect counter for local→global sync
+  const localToGlobalEffectCountRef = useRef<number>(0);
+  // TODO: Remove this safety fuse once the sync loop is resolved.
+  // Safety fuse: track run count to prevent infinite loops
+  const localToGlobalRunCountRef = useRef<number>(0);
 
   useEffect(() => {
-    // Don't sync if we're currently syncing from global (vcAnnotations -> localRegionAnnotations)
-    if (isSyncingFromGlobalRef.current) {
+    // TODO: Remove this safety fuse once the sync loop is resolved.
+    // Safety fuse: abort if run count exceeds threshold to prevent infinite loops
+    localToGlobalRunCountRef.current += 1;
+    if (localToGlobalRunCountRef.current > 20) {
+      if (__DEV__) {
+        console.warn('[VC] ABORT local→vcAnnotations sync: run count exceeded');
+      }
       return;
     }
 
-    // Don't sync if localRegionAnnotations is empty or doesn't match selectedRegionId
+    // DEV: Structured logging at effect start
+    if (__DEV__) {
+      localToGlobalEffectCountRef.current += 1;
+      console.log('[VC] local→global effect fired', {
+        runCount: localToGlobalRunCountRef.current,
+        effectCount: localToGlobalEffectCountRef.current,
+        selectedRegionId,
+        localRegionAnnotationsIsNull: localRegionAnnotations === null,
+        isSyncingFromGlobal: isSyncingFromGlobalRef.current,
+      });
+    }
+
+    // Guard 1: Check prerequisites
+    // Note: vcAnnotations is checked inside the functional update, not here
+    if (!selectedRegionId || !localRegionAnnotations) {
+      if (__DEV__) {
+        console.log('[VC] local→global: early exit – no selectedRegionId or no localRegionAnnotations');
+      }
+      return;
+    }
+
+    // Guard 2: Don't sync if localRegionAnnotations doesn't match selectedRegionId
     if (
       !localRegionAnnotations.regionId ||
       localRegionAnnotations.regionId !== selectedRegionId
     ) {
+      if (__DEV__) {
+        console.log('[VC] local→global: early exit – regionId mismatch', {
+          localRegionId: localRegionAnnotations.regionId,
+          selectedRegionId,
+        });
+      }
       return;
     }
 
-    const currentLocalJson = JSON.stringify(localRegionAnnotations);
+    // Guard 3: CRITICAL - If we're syncing from global, reset flag and abort
+    // This prevents local→global from firing during global→local updates
+    if (isSyncingFromGlobalRef.current) {
+      isSyncingFromGlobalRef.current = false;
+      if (__DEV__) {
+        console.log('[VC] local→global: skipping because isSyncingFromGlobalRef was true (reset flag)');
+      }
+      return;
+    }
 
-    // Skip if we've already updated for this exact localRegionAnnotations state
+    // Guard 4: Skip if we've already updated for this exact localRegionAnnotations state
+    const currentLocalJson = JSON.stringify(localRegionAnnotations);
     if (
       lastUpdatedRegionIdRef.current === selectedRegionId &&
       lastUpdatedLocalRef.current === currentLocalJson
     ) {
+      if (__DEV__) {
+        console.log('[VC] local→global: skipping – already updated for this state');
+      }
       return;
     }
 
+    // Build candidate VcRegionAnnotations for comparison
+    const candidateVcRegion = regionAnnotationsToVcRegion(
+      localRegionAnnotations,
+      currentRegion || null,
+    );
+
     // Use functional setState to update vcAnnotations
-    // Update the refs AFTER determining we need to update, but BEFORE calling setVcAnnotations
-    // This prevents the effect from re-running with the same data
+    // Compare BEFORE calling setVcAnnotations to avoid unnecessary updates
     setVcAnnotations((prev) => {
       if (!prev) return prev;
 
@@ -615,45 +726,51 @@ function VisualComposerPage({
       const regionIndex = prev.regions.findIndex(
         (r) => r.regionId === selectedRegionId,
       );
+      
       if (regionIndex === -1) {
         // Region doesn't exist in vcAnnotations, add it
         if (!currentRegion) return prev;
-        const newVcRegion = regionAnnotationsToVcRegion(
-          localRegionAnnotations,
-          currentRegion,
-        );
-        // Update refs after successful update
+        
+        if (__DEV__) {
+          console.log('[VC] local→global: applying update to vcAnnotations (adding new region)');
+        }
+        
+        // Update refs after determining we need to update
         lastUpdatedRegionIdRef.current = selectedRegionId;
         lastUpdatedLocalRef.current = currentLocalJson;
+        
         return {
           ...prev,
-          regions: [...prev.regions, newVcRegion],
+          regions: [...prev.regions, candidateVcRegion],
         };
       }
 
-      // Update existing region
-      const updatedVcRegion = regionAnnotationsToVcRegion(
-        localRegionAnnotations,
-        currentRegion || null,
-      );
-
-      // Check if anything actually changed before updating
+      // Update existing region - DEEP comparison before updating
       const prevRegion = prev.regions[regionIndex];
       const prevJson = JSON.stringify(prevRegion);
-      const nextJson = JSON.stringify(updatedVcRegion);
+      const nextJson = JSON.stringify(candidateVcRegion);
+      
       if (prevJson === nextJson) {
-        // No change, but still update refs to prevent re-running
+        // No change - update refs but don't trigger state update
+        if (__DEV__) {
+          console.log('[VC] local→global: no diff – skipping setVcAnnotations');
+        }
         lastUpdatedRegionIdRef.current = selectedRegionId;
         lastUpdatedLocalRef.current = currentLocalJson;
         return prev; // No change, return previous state
       }
 
+      // Only if they differ: apply the update
+      if (__DEV__) {
+        console.log('[VC] local→global: applying update to vcAnnotations (updating existing region)');
+      }
+      
       // Update refs after determining we need to update
       lastUpdatedRegionIdRef.current = selectedRegionId;
       lastUpdatedLocalRef.current = currentLocalJson;
 
       const updatedRegions = [...prev.regions];
-      updatedRegions[regionIndex] = updatedVcRegion;
+      updatedRegions[regionIndex] = candidateVcRegion;
 
       return {
         ...prev,
@@ -1023,13 +1140,6 @@ function VisualComposerPage({
     setIsDragging(true);
     setDragStart(bar);
     setDragLaneId(`${regionId}_${laneIndex}`);
-  };
-
-  const handleBarGridMouseMove = (_bar: number) => {
-    if (!isDragging || dragStart === null || !dragLaneId) return;
-
-    // Create or update block (will be finalized on mouse up)
-    // For now, we'll just track the drag
   };
 
   const handleBarGridMouseUp = (finalBar?: number) => {
