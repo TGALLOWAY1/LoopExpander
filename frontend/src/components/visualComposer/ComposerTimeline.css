@@ -59,3 +59,14 @@
   max-height: 600px;
 }
 
+.composer-timeline-empty-message {
+  padding: 2rem;
+  text-align: center;
+  color: #999;
+}
+
+.composer-timeline-empty-message p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+

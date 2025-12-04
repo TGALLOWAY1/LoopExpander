@@ -15,30 +15,32 @@ from pathlib import Path
 
 def main():
     """Start the FastAPI development server."""
-    # Get the backend directory
+    import os
+    
+    # Get the backend directory and src subdirectory
     backend_dir = Path(__file__).parent
-    project_root = backend_dir.parent
     src_dir = backend_dir / "src"
     
-    # Change to project root to ensure relative imports work
-    import os
-    os.chdir(project_root)
+    # Verify src directory exists
+    if not src_dir.exists():
+        print(f"Error: Source directory not found at {src_dir}", file=sys.stderr)
+        sys.exit(1)
     
-    # Set PYTHONPATH to include backend/src so imports work correctly
-    env = os.environ.copy()
-    pythonpath = str(src_dir)
-    if "PYTHONPATH" in env:
-        env["PYTHONPATH"] = f"{pythonpath}:{env['PYTHONPATH']}"
-    else:
-        env["PYTHONPATH"] = pythonpath
+    # Change to src directory so imports work correctly
+    # This ensures that 'config', 'api', 'models', etc. can be imported directly
+    os.chdir(src_dir)
     
-    # Run uvicorn
+    # Run uvicorn from src directory
     cmd = [
         sys.executable, "-m", "uvicorn",
-        "backend.src.main:app",
+        "main:app",
         "--reload",
+        "--host", "127.0.0.1",
         "--port", "8000"
     ]
+    
+    # Use current environment (no need to set PYTHONPATH since we're in src directory)
+    env = os.environ.copy()
     
     print("Starting FastAPI development server...")
     print("Server will be available at http://localhost:8000")

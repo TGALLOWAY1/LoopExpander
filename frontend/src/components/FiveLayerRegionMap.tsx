@@ -7,7 +7,7 @@
  * 
  * All layers share a common time scale (bars) for vertical alignment.
  */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Region } from '../api/reference';
 import { StemCallResponseLane, StemCategory } from '../types/callResponseLanes';
 import { useMotifSensitivity } from '../hooks/useMotifSensitivity';
@@ -336,7 +336,7 @@ export function FiveLayerRegionMap({
       })}
 
       {/* Debug panel (development only) */}
-      {process.env.NODE_ENV === 'development' && lanes && (
+      {import.meta.env.MODE !== 'production' && lanes && (
         <div className="debug-lanes-panel" style={{
           marginTop: '2rem',
           padding: '1rem',

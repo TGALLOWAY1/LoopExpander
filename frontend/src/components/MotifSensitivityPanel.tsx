@@ -26,7 +26,7 @@ export function MotifSensitivityPanel({
   onReanalyze,
   onDataRefetch
 }: MotifSensitivityPanelProps): JSX.Element {
-  const { config, setConfig, save, loading, saving, error } = useMotifSensitivity(referenceId || '');
+  const { config, save, loading, saving, error } = useMotifSensitivity(referenceId || '');
   
   // Local state for slider values (optimistic updates)
   const [localConfig, setLocalConfig] = useState<MotifSensitivityConfig | null>(null);

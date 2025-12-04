@@ -1,5 +1,9 @@
 /**
  * Main App component.
+ * 
+ * NOTE: This app is wrapped in React.StrictMode (see main.tsx), which double-invokes
+ * effects in development. This may cause duplicate effect runs during debugging.
+ * We're currently debugging a sync loop in VisualComposerPage.
  */
 import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
@@ -13,7 +17,7 @@ type AppView = 'ingest' | 'regionMap' | 'visualComposer';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
-  const [view, setView] = useState<AppView>('ingest');
+  const [view, setView] = useState<AppView>('visualComposer'); // Default to Visual Composer in dev
 
   return (
     <div className="app">
@@ -37,6 +41,15 @@ function App(): JSX.Element {
           >
             Region Map
           </button>
+          {VISUAL_COMPOSER_ENABLED && (
+            <button
+              className="dev-button"
+              style={{ margin: '12px', padding: '8px 12px' }}
+              onClick={() => setView('visualComposer')}
+            >
+              [Dev] Open Visual Composer
+            </button>
+          )}
         </nav>
       </header>
       <main>
@@ -44,18 +57,13 @@ function App(): JSX.Element {
         {view === 'regionMap' && (
           <>
             <RegionMapPage />
-            {VISUAL_COMPOSER_ENABLED && view === 'regionMap' && referenceId && (
-              <button
-                style={{ margin: '12px', padding: '8px 12px' }}
-                onClick={() => setView('visualComposer')}
-              >
-                [Dev] Open Visual Composer
-              </button>
-            )}
           </>
         )}
         {view === 'visualComposer' && (
-          <VisualComposerPage onBack={() => setView('regionMap')} />
+          <VisualComposerPage 
+            onBack={() => setView('regionMap')} 
+            demoMode={!referenceId || regions.length === 0}
+          />
         )}
       </main>
     </div>
