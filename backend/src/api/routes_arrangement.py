@@ -1,8 +1,9 @@
-"""API routes for arrangement generation and management (Phase 5-7)."""
+"""API routes for arrangement generation and management (Phase 5-8)."""
 import uuid
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from models.store import (
@@ -487,3 +488,70 @@ async def regenerate_guide_markers(project_id: str):
         "markers": [m.to_dict() for m in markers],
         "total": len(markers),
     }
+
+
+# ========== Section Audition (Phase 8B) ==========
+
+
+class AuditionRequest(BaseModel):
+    """Request payload for section audition."""
+    sectionId: str
+    soloRoles: Optional[List[str]] = None
+    muteRoles: Optional[List[str]] = None
+
+
+@router.post("/{project_id}/audition")
+async def audition_section(project_id: str, request: AuditionRequest):
+    """Render audio for a single section and return as WAV.
+
+    Supports solo/mute filtering by role for isolated previewing.
+    """
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    loop_bundle = USER_LOOPS.get(project_id)
+    if not loop_bundle or not loop_bundle.stems:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No user loop stems found.",
+        )
+
+    from arrangement.audition import render_section_audio
+
+    try:
+        wav_bytes = render_section_audio(
+            arrangement=arrangement,
+            loop_bundle=loop_bundle,
+            section_id=request.sectionId,
+            solo_roles=request.soloRoles,
+            mute_roles=request.muteRoles,
+        )
+
+        section = next(
+            (s for s in arrangement.sections if s.id == request.sectionId), None
+        )
+        filename = f"audition_{section.label if section else request.sectionId}.wav"
+
+        return Response(
+            content=wav_bytes,
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+            },
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Audition rendering failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Audition rendering failed: {str(e)}",
+        )

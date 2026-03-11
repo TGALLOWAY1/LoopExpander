@@ -20,6 +20,7 @@ import SuggestionPanel from '../components/arrangement/SuggestionPanel';
 import { GuidanceSummary } from '../components/arrangement/GuidanceOverlay';
 import GuideMarkerLayer from '../components/arrangement/GuideMarkerLayer';
 import BlockToolbar from '../components/arrangement/BlockToolbar';
+import AuditionPlayer from '../components/arrangement/AuditionPlayer';
 import './ArrangementPage.css';
 
 interface ArrangementPageProps {
@@ -525,6 +526,16 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         {/* Guidance Summary (below timeline) */}
         {referenceId && (
           <GuidanceSummary key={`guid-${suggestionKey}`} projectId={referenceId} />
+        )}
+
+        {/* Audition Player (below guidance) */}
+        {referenceId && arrangement && (
+          <AuditionPlayer
+            key={`aud-${suggestionKey}`}
+            projectId={referenceId}
+            sections={arrangement.sections}
+            roles={roles}
+          />
         )}
         </>
       )}
