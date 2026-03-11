@@ -18,10 +18,21 @@ import {
   RoleActivityTimeline,
   EnergyCurveResponse,
 } from '../api/referenceMix';
+import {
+  InteractionLabel,
+  InteractionLabelCreate,
+  InteractionLabelType,
+  getInteractionLabels,
+  createInteractionLabels,
+  updateInteractionLabel,
+  deleteInteractionLabel,
+  duplicatePattern,
+} from '../api/interactions';
 import { SectionTimeline } from '../components/structureCanvas/SectionTimeline';
 import { SectionEditor } from '../components/structureCanvas/SectionEditor';
 import { EnergyOverlay } from '../components/structureCanvas/EnergyOverlay';
 import { RoleActivityLanes } from '../components/structureCanvas/RoleActivityLanes';
+import { InteractionLabeler } from '../components/structureCanvas/InteractionLabeler';
 import '../components/structureCanvas/StructureCanvas.css';
 import './StructureCanvasPage.css';
 
@@ -117,6 +128,10 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Interaction label state
+  const [interactionLabels, setInteractionLabels] = useState<InteractionLabel[]>([]);
+  const [activeLabelType, setActiveLabelType] = useState<InteractionLabelType>('A');
+
   // Load data from API or use demo data
   useEffect(() => {
     if (demoMode || !referenceId) {
@@ -131,13 +146,17 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
     setLoading(true);
     setError(null);
 
-    loadStructureCanvasData(referenceId)
-      .then((data: StructureCanvasData) => {
+    Promise.all([
+      loadStructureCanvasData(referenceId),
+      getInteractionLabels(referenceId).catch(() => ({ labels: [] })),
+    ])
+      .then(([data, labelsRes]: [StructureCanvasData, { labels: InteractionLabel[] }]) => {
         if (cancelled) return;
         setSections(data.sections);
         setRoleTimelines(data.roleTimelines);
         setEnergyCurve(data.energyCurve);
         setTotalBars(data.totalBars);
+        setInteractionLabels(labelsRes.labels || []);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -285,6 +304,97 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
     [],
   );
 
+  // Interaction label handlers
+  const handleCreateLabel = useCallback(
+    async (labelCreate: InteractionLabelCreate) => {
+      // Optimistic local add
+      const tempLabel: InteractionLabel = {
+        id: `temp-${Date.now()}`,
+        ...labelCreate,
+        color: labelCreate.color || null,
+        notes: labelCreate.notes || null,
+      };
+      setInteractionLabels((prev) => [...prev, tempLabel]);
+
+      if (!demoMode && referenceId) {
+        try {
+          const res = await createInteractionLabels(referenceId, [labelCreate]);
+          setInteractionLabels(res.labels);
+        } catch (err) {
+          console.error('Failed to create label:', err);
+        }
+      }
+    },
+    [demoMode, referenceId],
+  );
+
+  const handleDeleteLabel = useCallback(
+    async (labelId: string) => {
+      setInteractionLabels((prev) => prev.filter((l) => l.id !== labelId));
+
+      if (!demoMode && referenceId && !labelId.startsWith('temp-')) {
+        try {
+          await deleteInteractionLabel(referenceId, labelId);
+        } catch (err) {
+          console.error('Failed to delete label:', err);
+        }
+      }
+    },
+    [demoMode, referenceId],
+  );
+
+  const handleUpdateLabel = useCallback(
+    async (labelId: string, updates: Partial<InteractionLabel>) => {
+      setInteractionLabels((prev) =>
+        prev.map((l) => (l.id === labelId ? { ...l, ...updates } : l)),
+      );
+
+      if (!demoMode && referenceId && !labelId.startsWith('temp-')) {
+        try {
+          await updateInteractionLabel(referenceId, labelId, { id: labelId, ...updates });
+        } catch (err) {
+          console.error('Failed to update label:', err);
+        }
+      }
+    },
+    [demoMode, referenceId],
+  );
+
+  const handleDuplicatePattern = useCallback(
+    async (sourceSectionId: string, targetSectionId: string) => {
+      if (!demoMode && referenceId) {
+        try {
+          const res = await duplicatePattern(referenceId, sourceSectionId, targetSectionId);
+          setInteractionLabels(res.labels);
+        } catch (err) {
+          console.error('Failed to duplicate pattern:', err);
+        }
+      } else {
+        // Demo mode: locally duplicate
+        const sourceLabels = interactionLabels.filter((l) => l.sectionId === sourceSectionId);
+        const sourceSection = sections.find((s) => s.id === sourceSectionId);
+        const targetSection = sections.find((s) => s.id === targetSectionId);
+        if (!sourceSection || !targetSection || sourceLabels.length === 0) return;
+
+        const newLabels = sourceLabels.map((lbl) => {
+          const offset = lbl.startBar - sourceSection.startBar;
+          return {
+            ...lbl,
+            id: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            sectionId: targetSectionId,
+            startBar: targetSection.startBar + offset,
+            endBar: Math.min(
+              targetSection.startBar + (lbl.endBar - sourceSection.startBar),
+              targetSection.endBar,
+            ),
+          };
+        });
+        setInteractionLabels((prev) => [...prev, ...newLabels]);
+      }
+    },
+    [demoMode, referenceId, interactionLabels, sections],
+  );
+
   if (loading) {
     return (
       <div className="structure-canvas-page">
@@ -357,6 +467,20 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
               onToggleSegment={handleRoleToggle}
             />
           )}
+
+          {/* Interaction labeler (Phase 3) */}
+          <InteractionLabeler
+            labels={interactionLabels}
+            sections={sections}
+            totalBars={totalBars}
+            barWidth={BAR_WIDTH}
+            activeLabelType={activeLabelType}
+            onLabelTypeChange={setActiveLabelType}
+            onCreateLabel={handleCreateLabel}
+            onDeleteLabel={handleDeleteLabel}
+            onUpdateLabel={handleUpdateLabel}
+            onDuplicatePattern={handleDuplicatePattern}
+          />
         </div>
 
         {/* Section editor sidebar */}

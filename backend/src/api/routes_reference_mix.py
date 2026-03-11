@@ -12,7 +12,9 @@ from models.store import (
     REFERENCE_REGIONS,
     REFERENCE_ROLE_ACTIVITY,
     REFERENCE_ENERGY_CURVES,
+    INTERACTION_LABELS,
 )
+from models.interaction_label import InteractionLabel, duplicate_labels_to_section
 from models.reference_mix import ReferenceMix
 from stem_ingest.ingest_service import load_reference_mix
 from analysis.role_activity.role_detector import detect_role_activity
@@ -502,6 +504,202 @@ async def patch_role_activity(reference_id: str, request: PatchRoleActivityReque
     return {
         "referenceId": reference_id,
         "timelines": [t.to_dict() for t in REFERENCE_ROLE_ACTIVITY[reference_id]],
+    }
+
+
+##############################################################################
+# Phase 3: Interaction labeling endpoints
+##############################################################################
+
+
+class InteractionLabelCreate(BaseModel):
+    sectionId: str
+    startBar: float
+    endBar: float
+    label: str
+    color: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InteractionLabelUpdate(BaseModel):
+    id: str
+    sectionId: Optional[str] = None
+    startBar: Optional[float] = None
+    endBar: Optional[float] = None
+    label: Optional[str] = None
+    color: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InteractionLabelBatchRequest(BaseModel):
+    labels: List[InteractionLabelCreate]
+
+
+class DuplicatePatternRequest(BaseModel):
+    sourceSectionId: str
+    targetSectionId: str
+
+
+@router.get("/{reference_id}/interactions")
+async def get_interactions(reference_id: str):
+    """Get all interaction labels for a reference."""
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    labels = INTERACTION_LABELS.get(reference_id, [])
+    return {
+        "referenceId": reference_id,
+        "labels": [lbl.to_dict() for lbl in labels],
+        "count": len(labels),
+    }
+
+
+@router.post("/{reference_id}/interactions")
+async def create_or_update_interactions(reference_id: str, request: InteractionLabelBatchRequest):
+    """Create or update interaction labels.
+
+    Accepts a batch of labels. If a label with the same id exists, it is updated.
+    Otherwise, a new label is created.
+    """
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    existing = INTERACTION_LABELS.get(reference_id, [])
+    existing_map = {lbl.id: lbl for lbl in existing}
+
+    for label_data in request.labels:
+        new_label = InteractionLabel(
+            id=str(uuid.uuid4()),
+            section_id=label_data.sectionId,
+            start_bar=label_data.startBar,
+            end_bar=label_data.endBar,
+            label=label_data.label,
+            color=label_data.color,
+            notes=label_data.notes,
+        )
+        existing_map[new_label.id] = new_label
+
+    labels_list = list(existing_map.values())
+    labels_list.sort(key=lambda l: (l.section_id, l.start_bar))
+    INTERACTION_LABELS[reference_id] = labels_list
+
+    return {
+        "referenceId": reference_id,
+        "labels": [lbl.to_dict() for lbl in labels_list],
+        "count": len(labels_list),
+    }
+
+
+@router.put("/{reference_id}/interactions/{label_id}")
+async def update_interaction(reference_id: str, label_id: str, request: InteractionLabelUpdate):
+    """Update a single interaction label."""
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    labels = INTERACTION_LABELS.get(reference_id, [])
+    target = None
+    for lbl in labels:
+        if lbl.id == label_id:
+            target = lbl
+            break
+
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Label {label_id} not found")
+
+    if request.sectionId is not None:
+        target.section_id = request.sectionId
+    if request.startBar is not None:
+        target.start_bar = request.startBar
+    if request.endBar is not None:
+        target.end_bar = request.endBar
+    if request.label is not None:
+        target.label = request.label
+    if request.color is not None:
+        target.color = request.color
+    if request.notes is not None:
+        target.notes = request.notes
+
+    return {"referenceId": reference_id, "label": target.to_dict()}
+
+
+@router.delete("/{reference_id}/interactions/{label_id}")
+async def delete_interaction(reference_id: str, label_id: str):
+    """Delete an interaction label."""
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    labels = INTERACTION_LABELS.get(reference_id, [])
+    original_len = len(labels)
+    labels = [lbl for lbl in labels if lbl.id != label_id]
+
+    if len(labels) == original_len:
+        raise HTTPException(status_code=404, detail=f"Label {label_id} not found")
+
+    INTERACTION_LABELS[reference_id] = labels
+    return {"referenceId": reference_id, "deleted": label_id}
+
+
+@router.post("/{reference_id}/interactions/duplicate")
+async def duplicate_interaction_pattern(reference_id: str, request: DuplicatePatternRequest):
+    """Duplicate all interaction labels from one section to another.
+
+    Adjusts bar positions relative to the target section start.
+    """
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    mix = REFERENCE_MIXES[reference_id]
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    if not regions:
+        raise HTTPException(status_code=404, detail="No regions found. Run analyze-mix first.")
+
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+
+    # Find source and target sections
+    source_region = None
+    target_region = None
+    for r in regions:
+        if r.id == request.sourceSectionId:
+            source_region = r
+        if r.id == request.targetSectionId:
+            target_region = r
+
+    if not source_region:
+        raise HTTPException(status_code=404, detail=f"Source section {request.sourceSectionId} not found")
+    if not target_region:
+        raise HTTPException(status_code=404, detail=f"Target section {request.targetSectionId} not found")
+
+    # Get labels for the source section
+    all_labels = INTERACTION_LABELS.get(reference_id, [])
+    source_labels = [lbl for lbl in all_labels if lbl.section_id == request.sourceSectionId]
+
+    if not source_labels:
+        return {
+            "referenceId": reference_id,
+            "duplicated": 0,
+            "labels": [lbl.to_dict() for lbl in all_labels],
+        }
+
+    source_start_bar = source_region.start / seconds_per_bar
+    target_start_bar = target_region.start / seconds_per_bar
+    target_end_bar = target_region.end / seconds_per_bar
+
+    new_labels = duplicate_labels_to_section(
+        labels=source_labels,
+        source_section_start_bar=source_start_bar,
+        target_section_id=request.targetSectionId,
+        target_section_start_bar=target_start_bar,
+        target_section_end_bar=target_end_bar,
+    )
+
+    all_labels.extend(new_labels)
+    all_labels.sort(key=lambda l: (l.section_id, l.start_bar))
+    INTERACTION_LABELS[reference_id] = all_labels
+
+    return {
+        "referenceId": reference_id,
+        "duplicated": len(new_labels),
+        "labels": [lbl.to_dict() for lbl in all_labels],
     }
 
 
