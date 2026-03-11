@@ -7,6 +7,7 @@ from models.region import Region
 from models.role_activity import RoleActivityTimeline
 from models.interaction_label import InteractionLabel
 from models.user_loop import UserLoopBundle
+from arrangement.models import Arrangement
 
 if TYPE_CHECKING:
     from models.annotations import ReferenceAnnotations
@@ -55,4 +56,8 @@ INTERACTION_LABELS: Dict[str, List[InteractionLabel]] = {}
 # In-memory storage for user loop bundles per reference/project
 # Maps project_id (reference_id) -> UserLoopBundle
 USER_LOOPS: Dict[str, UserLoopBundle] = {}
+
+# In-memory storage for generated arrangements per project
+# Maps project_id (reference_id) -> Arrangement
+ARRANGEMENTS: Dict[str, Arrangement] = {}
 
