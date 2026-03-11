@@ -191,3 +191,81 @@ export const GUIDANCE_TYPE_LABELS: Record<string, string> = {
   interaction: 'Interaction',
   purpose: 'Section Purpose',
 };
+
+// ========== Guide Markers (Phase 7) ==========
+
+/**
+ * A guide marker on the arrangement timeline.
+ */
+export interface GuideMarker {
+  id: string;
+  type: 'fill' | 'impact' | 'build' | 'transition' | 'response_needed';
+  barPosition: number;
+  sectionId: string;
+  label: string;
+  description: string;
+}
+
+/**
+ * Response from the guide markers endpoint.
+ */
+export interface GuideMarkersResponse {
+  projectId: string;
+  markers: GuideMarker[];
+  total: number;
+}
+
+/**
+ * Get guide markers for the arrangement timeline.
+ */
+export async function getGuideMarkers(
+  projectId: string,
+): Promise<GuideMarkersResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/project/${projectId}/guide-markers`,
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch guide markers' }));
+    throw new Error(error.detail || `Failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Force regeneration of guide markers.
+ */
+export async function regenerateGuideMarkers(
+  projectId: string,
+): Promise<GuideMarkersResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/project/${projectId}/guide-markers/regenerate`,
+    { method: 'POST' },
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to regenerate guide markers' }));
+    throw new Error(error.detail || `Failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/** Guide marker type colors. */
+export const MARKER_TYPE_COLORS: Record<string, string> = {
+  fill: '#FF9800',
+  impact: '#F44336',
+  build: '#4CAF50',
+  transition: '#9C27B0',
+  response_needed: '#2196F3',
+};
+
+/** Guide marker type icons (text-based). */
+export const MARKER_TYPE_ICONS: Record<string, string> = {
+  fill: 'F',
+  impact: '!',
+  build: 'B',
+  transition: 'T',
+  response_needed: 'R',
+};
