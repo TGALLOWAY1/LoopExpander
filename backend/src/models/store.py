@@ -61,3 +61,15 @@ USER_LOOPS: Dict[str, UserLoopBundle] = {}
 # Maps project_id (reference_id) -> Arrangement
 ARRANGEMENTS: Dict[str, Arrangement] = {}
 
+# In-memory storage for variation suggestions per project
+# Maps project_id -> list[VariationSuggestion]
+VARIATION_SUGGESTIONS: Dict[str, List] = {}
+
+# In-memory storage for guidance messages per project
+# Maps project_id -> list[GuidanceMessage]
+GUIDANCE_MESSAGES: Dict[str, List] = {}
+
+# In-memory storage for guide markers per project
+# Maps project_id -> list[GuideMarker]
+GUIDE_MARKERS: Dict[str, List] = {}
+

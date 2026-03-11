@@ -1,4 +1,4 @@
-"""API routes for arrangement generation and management (Phase 5)."""
+"""API routes for arrangement generation and management (Phase 5-7)."""
 import uuid
 from typing import Optional, List
 
@@ -13,9 +13,25 @@ from models.store import (
     INTERACTION_LABELS,
     USER_LOOPS,
     ARRANGEMENTS,
+    VARIATION_SUGGESTIONS,
+    GUIDANCE_MESSAGES,
+    GUIDE_MARKERS,
 )
 from arrangement.mapping_engine import generate_arrangement
 from arrangement.models import Arrangement, ArrangementBlock
+from arrangement.variation_engine import (
+    generate_variation_suggestions,
+    apply_suggestion as apply_variation_suggestion,
+    VariationSuggestion,
+)
+from arrangement.guidance_engine import (
+    generate_guidance_messages,
+    GuidanceMessage,
+)
+from arrangement.guide_content import (
+    generate_guide_markers,
+    GuideMarker,
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -95,6 +111,11 @@ async def generate_arrangement_endpoint(
         )
 
         ARRANGEMENTS[project_id] = arrangement
+
+        # Clear cached suggestions, guidance, and guide markers for regeneration
+        VARIATION_SUGGESTIONS.pop(project_id, None)
+        GUIDANCE_MESSAGES.pop(project_id, None)
+        GUIDE_MARKERS.pop(project_id, None)
 
         logger.info(
             f"Arrangement generated: {len(arrangement.sections)} sections, "
@@ -194,3 +215,275 @@ async def delete_arrangement_block(project_id: str, block_id: str):
         )
 
     return {"deleted": block_id, "remainingBlocks": len(arrangement.blocks)}
+
+
+# ========== Variation Suggestions (Phase 6A) ==========
+
+
+@router.get("/{project_id}/suggestions")
+async def get_suggestions(project_id: str):
+    """Get variation suggestions for the current arrangement.
+
+    Generates fresh suggestions if none exist, or returns cached ones.
+    """
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    # Generate suggestions if not cached
+    if project_id not in VARIATION_SUGGESTIONS:
+        # Count stems per role for A/B alternation suggestions
+        loop_bundle = USER_LOOPS.get(project_id)
+        user_stem_roles = {}
+        if loop_bundle:
+            for stem in loop_bundle.stems:
+                user_stem_roles[stem.role] = user_stem_roles.get(stem.role, 0) + 1
+
+        energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+        suggestions = generate_variation_suggestions(
+            arrangement=arrangement,
+            user_stem_roles=user_stem_roles,
+            energy_curve=energy_curve,
+        )
+        VARIATION_SUGGESTIONS[project_id] = suggestions
+        logger.info(f"Generated {len(suggestions)} variation suggestions for {project_id}")
+
+    suggestions = VARIATION_SUGGESTIONS[project_id]
+    return {
+        "projectId": project_id,
+        "suggestions": [s.to_dict() for s in suggestions],
+        "total": len(suggestions),
+        "applied": sum(1 for s in suggestions if s.applied),
+        "dismissed": sum(1 for s in suggestions if s.dismissed),
+    }
+
+
+@router.post("/{project_id}/suggestions/regenerate")
+async def regenerate_suggestions(project_id: str):
+    """Force regeneration of variation suggestions."""
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    loop_bundle = USER_LOOPS.get(project_id)
+    user_stem_roles = {}
+    if loop_bundle:
+        for stem in loop_bundle.stems:
+            user_stem_roles[stem.role] = user_stem_roles.get(stem.role, 0) + 1
+
+    energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+    suggestions = generate_variation_suggestions(
+        arrangement=arrangement,
+        user_stem_roles=user_stem_roles,
+        energy_curve=energy_curve,
+    )
+    VARIATION_SUGGESTIONS[project_id] = suggestions
+    logger.info(f"Regenerated {len(suggestions)} variation suggestions for {project_id}")
+
+    return {
+        "projectId": project_id,
+        "suggestions": [s.to_dict() for s in suggestions],
+        "total": len(suggestions),
+    }
+
+
+@router.post("/{project_id}/suggestions/{suggestion_id}/apply")
+async def apply_suggestion(project_id: str, suggestion_id: str):
+    """Apply a variation suggestion to the arrangement."""
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    suggestions = VARIATION_SUGGESTIONS.get(project_id, [])
+    target = next((s for s in suggestions if s.id == suggestion_id), None)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Suggestion {suggestion_id} not found.",
+        )
+
+    if target.applied:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Suggestion already applied.",
+        )
+
+    if target.dismissed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Suggestion was dismissed. Regenerate suggestions to get it back.",
+        )
+
+    success = apply_variation_suggestion(arrangement, target)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to apply suggestion.",
+        )
+
+    logger.info(f"Applied suggestion {suggestion_id} ({target.type}) for {project_id}")
+
+    return {
+        "suggestion": target.to_dict(),
+        "arrangement": arrangement.to_dict(),
+    }
+
+
+@router.post("/{project_id}/suggestions/{suggestion_id}/dismiss")
+async def dismiss_suggestion(project_id: str, suggestion_id: str):
+    """Dismiss a variation suggestion."""
+    suggestions = VARIATION_SUGGESTIONS.get(project_id, [])
+    target = next((s for s in suggestions if s.id == suggestion_id), None)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Suggestion {suggestion_id} not found.",
+        )
+
+    target.dismissed = True
+    logger.info(f"Dismissed suggestion {suggestion_id} for {project_id}")
+
+    return {"suggestion": target.to_dict()}
+
+
+# ========== Arrangement Guidance (Phase 6B) ==========
+
+
+@router.get("/{project_id}/guidance")
+async def get_guidance(project_id: str):
+    """Get arrangement guidance messages.
+
+    Generates fresh guidance if none exist, or returns cached ones.
+    """
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    # Generate guidance if not cached
+    if project_id not in GUIDANCE_MESSAGES:
+        interaction_labels = INTERACTION_LABELS.get(project_id, [])
+        energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+        messages = generate_guidance_messages(
+            arrangement=arrangement,
+            interaction_labels=interaction_labels,
+            energy_curve=energy_curve,
+        )
+        GUIDANCE_MESSAGES[project_id] = messages
+        logger.info(f"Generated {len(messages)} guidance messages for {project_id}")
+
+    messages = GUIDANCE_MESSAGES[project_id]
+    return {
+        "projectId": project_id,
+        "messages": [m.to_dict() for m in messages],
+        "total": len(messages),
+        "warnings": sum(1 for m in messages if m.severity == "warning"),
+        "suggestions": sum(1 for m in messages if m.severity == "suggestion"),
+        "info": sum(1 for m in messages if m.severity == "info"),
+    }
+
+
+@router.post("/{project_id}/guidance/regenerate")
+async def regenerate_guidance(project_id: str):
+    """Force regeneration of guidance messages."""
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    interaction_labels = INTERACTION_LABELS.get(project_id, [])
+    energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+    messages = generate_guidance_messages(
+        arrangement=arrangement,
+        interaction_labels=interaction_labels,
+        energy_curve=energy_curve,
+    )
+    GUIDANCE_MESSAGES[project_id] = messages
+    logger.info(f"Regenerated {len(messages)} guidance messages for {project_id}")
+
+    return {
+        "projectId": project_id,
+        "messages": [m.to_dict() for m in messages],
+        "total": len(messages),
+    }
+
+
+# ========== Guide Content (Phase 7) ==========
+
+
+@router.get("/{project_id}/guide-markers")
+async def get_guide_markers(project_id: str):
+    """Get guide markers for the arrangement timeline.
+
+    Generates fresh markers if none exist, or returns cached ones.
+    """
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    if project_id not in GUIDE_MARKERS:
+        interaction_labels = INTERACTION_LABELS.get(project_id, [])
+        energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+        markers = generate_guide_markers(
+            arrangement=arrangement,
+            interaction_labels=interaction_labels,
+            energy_curve=energy_curve,
+        )
+        GUIDE_MARKERS[project_id] = markers
+        logger.info(f"Generated {len(markers)} guide markers for {project_id}")
+
+    markers = GUIDE_MARKERS[project_id]
+    return {
+        "projectId": project_id,
+        "markers": [m.to_dict() for m in markers],
+        "total": len(markers),
+    }
+
+
+@router.post("/{project_id}/guide-markers/regenerate")
+async def regenerate_guide_markers(project_id: str):
+    """Force regeneration of guide markers."""
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    interaction_labels = INTERACTION_LABELS.get(project_id, [])
+    energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+    markers = generate_guide_markers(
+        arrangement=arrangement,
+        interaction_labels=interaction_labels,
+        energy_curve=energy_curve,
+    )
+    GUIDE_MARKERS[project_id] = markers
+    logger.info(f"Regenerated {len(markers)} guide markers for {project_id}")
+
+    return {
+        "projectId": project_id,
+        "markers": [m.to_dict() for m in markers],
+        "total": len(markers),
+    }

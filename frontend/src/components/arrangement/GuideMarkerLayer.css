@@ -1,0 +1,81 @@
+/**
+ * Styles for GuideMarkerLayer.
+ */
+.gm-layer {
+  position: relative;
+  height: 24px;
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+
+.gm-marker {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  pointer-events: auto;
+  z-index: 5;
+}
+
+.gm-stem {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed;
+  opacity: 0.5;
+}
+
+.gm-flag {
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+  opacity: 0.85;
+}
+
+.gm-flag:hover {
+  transform: scale(1.2);
+  opacity: 1;
+}
+
+.gm-icon {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.gm-tooltip {
+  position: absolute;
+  top: -4px;
+  left: 14px;
+  width: 200px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 6px 8px;
+  z-index: 25;
+  pointer-events: none;
+}
+
+.gm-tooltip-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.gm-tooltip-desc {
+  font-size: 0.72rem;
+  color: #666;
+  line-height: 1.3;
+}

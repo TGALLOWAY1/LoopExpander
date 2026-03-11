@@ -138,8 +138,39 @@
   font-size: 1rem;
 }
 
+/* ===== Toggle Button ===== */
+.arr-toggle-btn {
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.2s;
+}
+
+.arr-toggle-btn:hover {
+  background: #e0e0e0;
+}
+
+.arr-toggle-btn.active {
+  background: #e3f2fd;
+  border-color: #90CAF9;
+  color: #1565C0;
+}
+
+/* ===== Main Layout (content + suggestion panel) ===== */
+.arr-main-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
 /* ===== Content / Timeline ===== */
 .arr-content {
+  flex: 1;
+  min-width: 0;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
