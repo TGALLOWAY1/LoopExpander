@@ -8,6 +8,7 @@ from api.routes_visual_composer import router as visual_composer_router
 from api.routes_reference_mix import router as reference_mix_router
 from api.routes_user_loop import router as user_loop_router
 from api.routes_arrangement import router as arrangement_router
+from api.routes_export import router as export_router
 
 app = FastAPI(title=APP_NAME)
 
@@ -26,6 +27,7 @@ app.include_router(visual_composer_router, prefix="/api")
 app.include_router(reference_mix_router, prefix="/api")
 app.include_router(user_loop_router, prefix="/api")
 app.include_router(arrangement_router, prefix="/api")
+app.include_router(export_router, prefix="/api")
 
 
 @app.get("/api/health")
