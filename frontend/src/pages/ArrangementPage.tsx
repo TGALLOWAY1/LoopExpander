@@ -21,6 +21,7 @@ import { GuidanceSummary } from '../components/arrangement/GuidanceOverlay';
 import GuideMarkerLayer from '../components/arrangement/GuideMarkerLayer';
 import BlockToolbar from '../components/arrangement/BlockToolbar';
 import AuditionPlayer from '../components/arrangement/AuditionPlayer';
+import ExportPanel from '../components/export/ExportPanel';
 import './ArrangementPage.css';
 
 interface ArrangementPageProps {
@@ -57,6 +58,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [suggestionKey, setSuggestionKey] = useState(0);
+  const [showExport, setShowExport] = useState(false);
 
   // Drag-resize state
   const [resizing, setResizing] = useState<{
@@ -295,12 +297,20 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         </div>
         <div className="arr-header-right">
           {arrangement && (
-            <button
-              className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
-              onClick={() => setShowSuggestions((v) => !v)}
-            >
-              {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
-            </button>
+            <>
+              <button
+                className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
+                onClick={() => setShowSuggestions((v) => !v)}
+              >
+                {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
+              </button>
+              <button
+                className="arr-export-btn"
+                onClick={() => setShowExport(true)}
+              >
+                Export
+              </button>
+            </>
           )}
           <button
             className="arr-generate-btn"
@@ -538,6 +548,14 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
           />
         )}
         </>
+      )}
+
+      {/* Export Panel Modal */}
+      {showExport && referenceId && (
+        <ExportPanel
+          projectId={referenceId}
+          onClose={() => setShowExport(false)}
+        />
       )}
     </div>
   );
