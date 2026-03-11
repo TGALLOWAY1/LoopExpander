@@ -10,10 +10,11 @@ import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
 import VisualComposerPage from './pages/VisualComposerPage';
 import StructureCanvasPage from './pages/StructureCanvasPage';
+import LoopIngestPage from './pages/LoopIngestPage';
 import { VISUAL_COMPOSER_ENABLED } from './config';
 import './App.css';
 
-type AppView = 'ingest' | 'regionMap' | 'visualComposer' | 'structureCanvas';
+type AppView = 'ingest' | 'regionMap' | 'visualComposer' | 'structureCanvas' | 'loopIngest';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
@@ -47,6 +48,13 @@ function App(): JSX.Element {
           >
             Structure Canvas
           </button>
+          <button
+            className={view === 'loopIngest' ? 'nav-button active' : 'nav-button'}
+            onClick={() => setView('loopIngest')}
+            disabled={!referenceId}
+          >
+            Loop Material
+          </button>
           {VISUAL_COMPOSER_ENABLED && (
             <button
               className="dev-button"
@@ -70,6 +78,9 @@ function App(): JSX.Element {
             onBack={() => setView('regionMap')}
             demoMode={!referenceId || regions.length === 0}
           />
+        )}
+        {view === 'loopIngest' && (
+          <LoopIngestPage onComplete={() => setView('structureCanvas')} />
         )}
         {view === 'visualComposer' && (
           <VisualComposerPage
