@@ -2,13 +2,24 @@
 from typing import Dict, List, TYPE_CHECKING
 
 from models.reference_bundle import ReferenceBundle
+from models.reference_mix import ReferenceMix
 from models.region import Region
+from models.role_activity import RoleActivityTimeline
 
 if TYPE_CHECKING:
     from models.annotations import ReferenceAnnotations
 
 # In-memory storage for reference bundles
 REFERENCE_BUNDLES: Dict[str, ReferenceBundle] = {}
+
+# In-memory storage for single full-mix reference tracks
+REFERENCE_MIXES: Dict[str, ReferenceMix] = {}
+
+# In-memory storage for role activity timelines per reference
+REFERENCE_ROLE_ACTIVITY: Dict[str, List[RoleActivityTimeline]] = {}
+
+# In-memory storage for energy curves per reference
+REFERENCE_ENERGY_CURVES: Dict[str, dict] = {}
 
 # In-memory storage for detected regions per reference
 REFERENCE_REGIONS: Dict[str, List[Region]] = {}

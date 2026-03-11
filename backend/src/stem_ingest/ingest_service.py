@@ -7,6 +7,7 @@ import numpy as np
 
 from .audio_file import load_audio_file, AudioFile
 from models.reference_bundle import ReferenceBundle
+from models.reference_mix import ReferenceMix
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -108,6 +109,85 @@ def estimate_key(audio_file: AudioFile) -> Optional[str]:
     # - Use essentia library
     # - Use other key detection algorithms
     return None
+
+
+def compute_beat_grid(audio_file: AudioFile, bpm: float) -> list:
+    """Compute beat grid timestamps for a track.
+
+    Args:
+        audio_file: AudioFile to analyze.
+        bpm: BPM to use for beat grid.
+
+    Returns:
+        List of beat times in seconds.
+    """
+    y = audio_file.samples
+    sr = audio_file.sr
+    if y.ndim == 2:
+        if y.shape[0] < y.shape[1]:
+            y_mono = np.mean(y, axis=0)
+        else:
+            y_mono = np.mean(y, axis=1)
+    else:
+        y_mono = y
+
+    _, beat_frames = librosa.beat.beat_track(y=y_mono, sr=sr, bpm=bpm)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+    return [float(t) for t in beat_times]
+
+
+def load_reference_mix(
+    file_path: Path,
+    user_bpm_override: Optional[float] = None,
+) -> ReferenceMix:
+    """Load a single full-mix reference track.
+
+    Args:
+        file_path: Path to the audio file.
+        user_bpm_override: Optional BPM override from the user.
+
+    Returns:
+        ReferenceMix instance.
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+        ValueError: If duration is outside valid range (30s–600s).
+    """
+    logger.info(f"Loading reference mix: {file_path}")
+    audio = load_audio_file(file_path, role="reference_mix")
+
+    # Validate duration
+    if audio.duration < 30.0:
+        raise ValueError(
+            f"Reference track too short: {audio.duration:.1f}s (minimum 30s)"
+        )
+    if audio.duration > 600.0:
+        raise ValueError(
+            f"Reference track too long: {audio.duration:.1f}s (maximum 600s)"
+        )
+
+    # Estimate BPM
+    logger.info("Estimating BPM from reference mix...")
+    detected_bpm = estimate_bpm(audio)
+
+    effective_bpm = user_bpm_override if user_bpm_override else detected_bpm
+    logger.info(f"Using BPM: {effective_bpm} (detected: {detected_bpm})")
+
+    # Compute beat grid
+    logger.info("Computing beat grid...")
+    beat_grid = compute_beat_grid(audio, effective_bpm)
+    logger.info(f"Beat grid: {len(beat_grid)} beats")
+
+    mix = ReferenceMix(
+        audio=audio,
+        bpm=detected_bpm,
+        beat_grid=beat_grid,
+        key=estimate_key(audio),
+        user_bpm_override=user_bpm_override,
+    )
+
+    logger.info(f"Successfully loaded reference mix: {mix}")
+    return mix
 
 
 def load_reference_bundle(file_paths: Dict[str, Path]) -> ReferenceBundle:

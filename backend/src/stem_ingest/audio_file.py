@@ -74,9 +74,9 @@ def load_audio_file(
     
     # Validate file format
     suffix = path.suffix.lower()
-    if suffix not in ['.wav', '.aiff', '.aif']:
+    if suffix not in ['.wav', '.aiff', '.aif', '.mp3']:
         raise UnsupportedFormatError(
-            f"Unsupported audio format: {suffix}. Only WAV and AIFF are supported."
+            f"Unsupported audio format: {suffix}. Only WAV, AIFF, and MP3 are supported."
         )
     
     logger.info(f"Loading audio file: {path} (role: {role})")
@@ -84,15 +84,25 @@ def load_audio_file(
     # Load audio file using soundfile for format detection, then librosa for processing
     try:
         # First, read metadata to get original sample rate
-        with sf.SoundFile(str(path)) as f:
-            original_sr = f.samplerate
-            channels = f.channels
-            frames = f.frames
-            duration = frames / original_sr
-        
-        # Load audio data
-        # librosa.load always returns mono, so we'll handle stereo separately if needed
-        samples, sr = librosa.load(str(path), sr=None, mono=False)
+        # MP3 files cannot be read by soundfile, use librosa directly
+        if suffix == '.mp3':
+            samples, sr = librosa.load(str(path), sr=None, mono=False)
+            if samples.ndim == 1:
+                channels = 1
+                duration = len(samples) / sr
+            else:
+                channels = samples.shape[0]
+                duration = samples.shape[1] / sr
+        else:
+            with sf.SoundFile(str(path)) as f:
+                original_sr = f.samplerate
+                channels = f.channels
+                frames = f.frames
+                duration = frames / original_sr
+
+            # Load audio data
+            # librosa.load always returns mono, so we'll handle stereo separately if needed
+            samples, sr = librosa.load(str(path), sr=None, mono=False)
         
         # If stereo, keep it; librosa.load with mono=False returns shape (channels, samples)
         # If mono, samples is 1D array
