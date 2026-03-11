@@ -327,60 +327,84 @@ def assign_region_labels(regions: List[Region], stats: List[Dict]) -> None:
         return
     
     # Normal case: 4+ regions
-    
-    # 1. Intro & Outro (by position)
+
+    # 1. Intro & Outro (by position and energy)
+    # First section with low energy -> Intro
     regions[0].name = "Intro"
     regions[0].type = "low_energy"
-    
+
+    # Last section with energy decline -> Outro
     regions[-1].name = "Outro"
     regions[-1].type = "low_energy"
-    
-    # 2. Drop / High-Energy (highest energy, prefer middle position)
+
+    # 2. Find high-energy sections -> Chorus/Drop candidates
     energy_zs = [s["energy_z"] for s in stats]
-    max_energy_idx = np.argmax(energy_zs)
-    
-    # If multiple regions have same max energy, pick one closest to middle
-    max_energy = energy_zs[max_energy_idx]
-    candidates = [i for i, z in enumerate(energy_zs) if abs(z - max_energy) < 0.1]
-    
-    if len(candidates) > 1:
-        # Pick candidate closest to middle (0.5 relative position)
-        best_idx = min(candidates, key=lambda i: abs(stats[i]["relative_pos"] - 0.5))
+
+    # Identify high-energy repeated sections as Chorus candidates
+    high_energy_threshold = 0.3
+    high_energy_indices = [
+        i for i in range(1, len(regions) - 1)
+        if energy_zs[i] > high_energy_threshold
+    ]
+
+    # If multiple high-energy sections exist, they are likely Chorus sections
+    # A single high-energy section is more likely a Drop
+    chorus_indices = set()
+    drop_indices = set()
+
+    if len(high_energy_indices) >= 2:
+        # Multiple high-energy sections -> label as Chorus
+        for idx in high_energy_indices:
+            chorus_indices.add(idx)
+    elif len(high_energy_indices) == 1:
+        # Single high-energy section -> label as Drop
+        drop_indices.add(high_energy_indices[0])
     else:
-        best_idx = max_energy_idx
-    
-    # Don't assign Drop to first or last region
-    if best_idx > 0 and best_idx < len(regions) - 1:
-        regions[best_idx].name = "Drop"
-        regions[best_idx].type = "high_energy"
-    
-    # 3. Build vs Breakdown vs Verse (remaining regions)
+        # No clearly high-energy sections; find the highest
+        max_energy_idx = int(np.argmax(energy_zs))
+        if 0 < max_energy_idx < len(regions) - 1:
+            drop_indices.add(max_energy_idx)
+
+    # 3. Label high-energy sections
+    chorus_counter = 1
+    for i in sorted(chorus_indices):
+        regions[i].name = f"Chorus" if chorus_counter == 1 else f"Chorus {chorus_counter}"
+        regions[i].type = "high_energy"
+        chorus_counter += 1
+
+    for i in drop_indices:
+        regions[i].name = "Drop"
+        regions[i].type = "high_energy"
+
+    # 4. Label remaining middle sections
+    verse_counter = 1
     for i in range(1, len(regions) - 1):
-        # Skip if already labeled as Drop
-        if regions[i].name == "Drop":
+        if i in chorus_indices or i in drop_indices:
             continue
-        
+
         s = stats[i]
         energy_z = s["energy_z"]
         energy_slope = s["energy_slope"]
         relative_pos = s["relative_pos"]
-        
-        if energy_slope > 0 and energy_z >= -0.5:
+        duration = s["duration"]
+
+        if energy_slope > 0.001 and energy_z >= -0.5:
             # Rising energy: Build
             regions[i].name = "Build"
             regions[i].type = "build"
-        elif energy_slope < 0 and energy_z <= 0:
-            # Falling energy, low overall: Breakdown
+        elif energy_z < -0.3 and energy_slope < 0:
+            # Low energy, falling: Breakdown
             regions[i].name = "Breakdown"
             regions[i].type = "low_energy"
+        elif energy_z > 0 and duration < 15.0:
+            # Short high-energy single section: Bridge
+            regions[i].name = "Bridge"
+            regions[i].type = "medium_energy"
         else:
-            # Default: Verse or Post-Drop based on position
-            if relative_pos < 0.5:
-                regions[i].name = "Verse"
-                regions[i].type = "medium_energy"
-            else:
-                regions[i].name = "Post-Drop"
-                regions[i].type = "medium_energy"
+            # Medium energy: Verse
+            regions[i].name = f"Verse" if verse_counter == 1 else f"Verse {verse_counter}"
+            regions[i].type = "medium_energy"
+            verse_counter += 1
 
 
 def detect_regions(bundle: ReferenceBundle) -> List[Region]:
@@ -505,9 +529,11 @@ def detect_regions(bundle: ReferenceBundle) -> List[Region]:
     # Step 12: Assign labels
     assign_region_labels(regions, region_stats)
     
-    # Step 13: Re-assign IDs after merging
+    # Step 13: Re-assign IDs and set label fields after merging
     for i, region in enumerate(regions):
         region.id = f"region_{i+1:02d}"
+        region.label = region.name
+        region.provisional_label = region.name
     
     # Step 14: Diagnostic logging
     logger.info("=" * 80)

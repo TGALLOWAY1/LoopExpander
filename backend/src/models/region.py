@@ -1,5 +1,5 @@
 """Region model for song structure analysis."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any
 
 
@@ -14,6 +14,8 @@ class Region:
     motifs: List[str]
     fills: List[str]
     callResponse: List[Dict[str, Any]]
+    label: str = ""  # User-editable label (e.g., "Intro", "Verse", "Chorus")
+    provisional_label: str = ""  # Auto-detected label before user editing
     
     def __post_init__(self):
         """Validate region data after initialization."""

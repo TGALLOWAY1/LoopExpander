@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import APP_NAME
 from api.routes_reference import router as reference_router
 from api.routes_visual_composer import router as visual_composer_router
+from api.routes_reference_mix import router as reference_mix_router
 
 app = FastAPI(title=APP_NAME)
 
@@ -20,6 +21,7 @@ app.add_middleware(
 # Include routers
 app.include_router(reference_router, prefix="/api")
 app.include_router(visual_composer_router, prefix="/api")
+app.include_router(reference_mix_router, prefix="/api")
 
 
 @app.get("/api/health")
