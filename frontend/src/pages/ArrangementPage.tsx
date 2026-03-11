@@ -15,6 +15,8 @@ import {
   updateArrangementBlock,
 } from '../api/arrangement';
 import { ROLE_COLORS, ROLE_LABELS, StemRole } from '../api/userLoop';
+import SuggestionPanel from '../components/arrangement/SuggestionPanel';
+import { GuidanceSummary } from '../components/arrangement/GuidanceOverlay';
 import './ArrangementPage.css';
 
 interface ArrangementPageProps {
@@ -49,6 +51,8 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [suggestionKey, setSuggestionKey] = useState(0);
 
   // Try to load existing arrangement on mount
   useEffect(() => {
@@ -80,12 +84,17 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
     try {
       const data = await generateArrangement(referenceId);
       setArrangement(data);
+      setSuggestionKey((k) => k + 1); // Refresh suggestions panel
     } catch (err: any) {
       setError(err.message || 'Failed to generate arrangement');
     } finally {
       setGenerating(false);
     }
   }, [referenceId]);
+
+  const handleSuggestionApplied = useCallback((updatedArrangement: Arrangement) => {
+    setArrangement(updatedArrangement);
+  }, []);
 
   const handleToggleBlock = useCallback(async (block: ArrangementBlock) => {
     if (!referenceId || !arrangement) return;
@@ -152,6 +161,14 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
           )}
         </div>
         <div className="arr-header-right">
+          {arrangement && (
+            <button
+              className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
+              onClick={() => setShowSuggestions((v) => !v)}
+            >
+              {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
+            </button>
+          )}
           <button
             className="arr-generate-btn"
             onClick={handleGenerate}
@@ -192,6 +209,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
           </button>
         </div>
       ) : (
+        <div className="arr-main-layout">
         <div className="arr-content">
           {/* Section header row */}
           <div className="arr-timeline-container">
@@ -314,6 +332,21 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
             </span>
           </div>
         </div>
+
+        {/* Suggestion Panel (side panel) */}
+        {showSuggestions && referenceId && (
+          <SuggestionPanel
+            key={suggestionKey}
+            projectId={referenceId}
+            onArrangementUpdate={handleSuggestionApplied}
+          />
+        )}
+        </div>
+
+        {/* Guidance Summary (below timeline) */}
+        {referenceId && (
+          <GuidanceSummary key={`guid-${suggestionKey}`} projectId={referenceId} />
+        )}
       )}
     </div>
   );

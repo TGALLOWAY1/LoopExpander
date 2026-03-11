@@ -1,0 +1,224 @@
+/**
+ * Styles for SuggestionPanel.
+ */
+.sug-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 12px;
+  min-width: 260px;
+  max-width: 320px;
+}
+
+.sug-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.sug-panel-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #333;
+  flex: 1;
+}
+
+.sug-panel-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.sug-stat {
+  color: #888;
+}
+
+.sug-stat.applied {
+  color: #4CAF50;
+}
+
+.sug-refresh-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+}
+
+.sug-refresh-btn:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+.sug-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sug-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: #ffebee;
+  border-radius: 4px;
+  color: #c62828;
+  font-size: 0.8rem;
+}
+
+.sug-error button {
+  background: none;
+  border: none;
+  color: #c62828;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.sug-loading {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 0.85rem;
+}
+
+.sug-empty {
+  text-align: center;
+  padding: 20px;
+  color: #bbb;
+  font-size: 0.85rem;
+}
+
+.sug-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* ===== Card ===== */
+.sug-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 10px;
+  transition: border-color 0.2s;
+}
+
+.sug-card:hover {
+  border-color: #bbb;
+}
+
+.sug-card.applied {
+  opacity: 0.6;
+  border-color: #4CAF50;
+  background: #f9fff9;
+}
+
+.sug-card.dismissed {
+  display: none;
+}
+
+.sug-card-header {
+  margin-bottom: 6px;
+}
+
+.sug-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sug-type-badge.type-mute_layer {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.sug-type-badge.type-dropout {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.sug-type-badge.type-density_shift {
+  background: #F3E5F5;
+  color: #7B1FA2;
+}
+
+.sug-type-badge.type-alternate {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.sug-type-badge.type-gap {
+  background: #ECEFF1;
+  color: #37474F;
+}
+
+.sug-card-desc {
+  margin: 0 0 8px 0;
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.4;
+}
+
+.sug-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sug-apply-btn {
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sug-apply-btn:hover {
+  background: #1565c0;
+}
+
+.sug-dismiss-btn {
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  background: transparent;
+  color: #999;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sug-dismiss-btn:hover {
+  color: #666;
+  border-color: #bbb;
+}
+
+.sug-card-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sug-card-status.applied {
+  color: #4CAF50;
+}
+
+.sug-divider {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 0;
+  border-top: 1px solid #eee;
+  margin-top: 4px;
+}
