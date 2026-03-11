@@ -8,7 +8,6 @@ import {
   GuidanceMessage,
   GuidanceResponse,
   getGuidance,
-  regenerateGuidance,
   SEVERITY_COLORS,
   GUIDANCE_TYPE_LABELS,
 } from '../../api/suggestions';

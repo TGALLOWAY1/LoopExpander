@@ -210,6 +210,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
           </button>
         </div>
       ) : (
+        <>
         <div className="arr-main-layout">
         <div className="arr-content">
           {/* Section header row */}
@@ -366,6 +367,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         {referenceId && (
           <GuidanceSummary key={`guid-${suggestionKey}`} projectId={referenceId} />
         )}
+        </>
       )}
     </div>
   );
