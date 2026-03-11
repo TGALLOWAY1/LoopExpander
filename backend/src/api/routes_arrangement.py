@@ -112,6 +112,11 @@ async def generate_arrangement_endpoint(
 
         ARRANGEMENTS[project_id] = arrangement
 
+        # Clear cached suggestions, guidance, and guide markers for regeneration
+        VARIATION_SUGGESTIONS.pop(project_id, None)
+        GUIDANCE_MESSAGES.pop(project_id, None)
+        GUIDE_MARKERS.pop(project_id, None)
+
         logger.info(
             f"Arrangement generated: {len(arrangement.sections)} sections, "
             f"{len(arrangement.blocks)} blocks, {arrangement.total_bars} bars"
