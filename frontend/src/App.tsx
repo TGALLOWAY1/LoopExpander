@@ -1,28 +1,28 @@
 /**
  * Main App component.
- * 
+ *
  * NOTE: This app is wrapped in React.StrictMode (see main.tsx), which double-invokes
  * effects in development. This may cause duplicate effect runs during debugging.
- * We're currently debugging a sync loop in VisualComposerPage.
  */
 import { useState } from 'react';
 import { useProject } from './context/ProjectContext';
 import IngestPage from './pages/IngestPage';
 import RegionMapPage from './pages/RegionMapPage';
 import VisualComposerPage from './pages/VisualComposerPage';
+import StructureCanvasPage from './pages/StructureCanvasPage';
 import { VISUAL_COMPOSER_ENABLED } from './config';
 import './App.css';
 
-type AppView = 'ingest' | 'regionMap' | 'visualComposer';
+type AppView = 'ingest' | 'regionMap' | 'visualComposer' | 'structureCanvas';
 
 function App(): JSX.Element {
   const { referenceId, regions } = useProject();
-  const [view, setView] = useState<AppView>('visualComposer'); // Default to Visual Composer in dev
+  const [view, setView] = useState<AppView>('structureCanvas'); // Default to Structure Canvas in dev
 
   return (
     <div className="app">
       <header>
-        <h1>Song Structure Replicator</h1>
+        <h1>LoopExpander</h1>
         <div className="header-info">
           {referenceId && <span>Reference ID: {referenceId}</span>}
           {regions.length > 0 && <span>Regions: {regions.length}</span>}
@@ -41,27 +41,39 @@ function App(): JSX.Element {
           >
             Region Map
           </button>
+          <button
+            className={view === 'structureCanvas' ? 'nav-button active' : 'nav-button'}
+            onClick={() => setView('structureCanvas')}
+          >
+            Structure Canvas
+          </button>
           {VISUAL_COMPOSER_ENABLED && (
             <button
               className="dev-button"
               style={{ margin: '12px', padding: '8px 12px' }}
               onClick={() => setView('visualComposer')}
             >
-              [Dev] Open Visual Composer
+              [Dev] Visual Composer
             </button>
           )}
         </nav>
       </header>
       <main>
-        {view === 'ingest' && <IngestPage onAnalysisComplete={() => setView('regionMap')} />}
+        {view === 'ingest' && <IngestPage onAnalysisComplete={() => setView('structureCanvas')} />}
         {view === 'regionMap' && (
           <>
             <RegionMapPage />
           </>
         )}
+        {view === 'structureCanvas' && (
+          <StructureCanvasPage
+            onBack={() => setView('regionMap')}
+            demoMode={!referenceId || regions.length === 0}
+          />
+        )}
         {view === 'visualComposer' && (
-          <VisualComposerPage 
-            onBack={() => setView('regionMap')} 
+          <VisualComposerPage
+            onBack={() => setView('regionMap')}
             demoMode={!referenceId || regions.length === 0}
           />
         )}
@@ -71,4 +83,3 @@ function App(): JSX.Element {
 }
 
 export default App;
-

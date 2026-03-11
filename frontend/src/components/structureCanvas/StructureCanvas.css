@@ -1,0 +1,416 @@
+/**
+ * Styles for Structure Canvas components.
+ */
+
+/* ===== Timeline Layout ===== */
+.sc-section-timeline,
+.sc-energy-overlay-row,
+.sc-role-lane {
+  display: flex;
+  align-items: stretch;
+  min-height: 40px;
+}
+
+.sc-lane-label {
+  width: 100px;
+  min-width: 100px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+  display: flex;
+  align-items: center;
+  background: #fafafa;
+  border-right: 1px solid #e0e0e0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sc-timeline-scroll {
+  flex: 1;
+  overflow-x: auto;
+  position: relative;
+}
+
+/* ===== Timeline Header (bar ruler) ===== */
+.sc-timeline-header {
+  position: relative;
+  height: 24px;
+  border-bottom: 1px solid #ccc;
+  background: #f5f5f5;
+}
+
+.sc-bar-marker {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sc-bar-tick {
+  width: 1px;
+  height: 8px;
+  background: #999;
+}
+
+.sc-bar-number {
+  font-size: 0.65rem;
+  color: #888;
+  margin-top: 1px;
+  user-select: none;
+}
+
+/* ===== Grid Lines ===== */
+.sc-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+
+.sc-grid-line.major {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.sc-grid-line.minor {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* ===== Section Blocks Row ===== */
+.sc-sections-row {
+  position: relative;
+  height: 48px;
+  background: #fafafa;
+  cursor: default;
+}
+
+/* ===== Section Block ===== */
+.sc-section-block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  opacity: 0.85;
+  z-index: 1;
+}
+
+.sc-section-block:hover {
+  opacity: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.sc-section-block.selected {
+  opacity: 1;
+  border-color: #fff !important;
+  box-shadow: 0 0 0 2px #1976d2, 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.sc-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90%;
+}
+
+.sc-section-bars {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+}
+
+/* ===== Energy Overlay ===== */
+.sc-energy-overlay-row {
+  border-top: 1px solid #e0e0e0;
+}
+
+.sc-energy-canvas-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.sc-energy-canvas {
+  display: block;
+}
+
+.sc-energy-toggle-group {
+  display: flex;
+  gap: 4px;
+}
+
+.sc-energy-toggle {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  color: #666;
+}
+
+.sc-energy-toggle.active {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}
+
+/* Transition markers */
+.sc-transition-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  z-index: 2;
+  cursor: help;
+}
+
+.sc-transition-marker.lift {
+  background: rgba(76, 175, 80, 0.7);
+}
+
+.sc-transition-marker.drop {
+  background: rgba(244, 67, 54, 0.7);
+}
+
+.sc-transition-marker.breakdown {
+  background: rgba(33, 150, 243, 0.7);
+}
+
+.sc-transition-label {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: #fff;
+}
+
+.sc-transition-marker.lift .sc-transition-label {
+  background: #4CAF50;
+}
+
+.sc-transition-marker.drop .sc-transition-label {
+  background: #F44336;
+}
+
+.sc-transition-marker.breakdown .sc-transition-label {
+  background: #2196F3;
+}
+
+/* ===== Role Activity Lanes ===== */
+.sc-role-lanes-container {
+  border-top: 1px solid #e0e0e0;
+}
+
+.sc-role-lane {
+  border-bottom: 1px solid #eee;
+}
+
+.sc-role-lane:last-child {
+  border-bottom: none;
+}
+
+.sc-role-lane-label {
+  width: 100px;
+  min-width: 100px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #666;
+  display: flex;
+  align-items: center;
+  background: #fafafa;
+  border-right: 1px solid #e0e0e0;
+  text-transform: capitalize;
+}
+
+.sc-role-segments-container {
+  flex: 1;
+  overflow-x: auto;
+}
+
+.sc-role-segments-row {
+  position: relative;
+  height: 32px;
+  background: #fafafa;
+}
+
+.sc-role-segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.sc-role-segment.active {
+  opacity: 0.7;
+}
+
+.sc-role-segment.inactive {
+  opacity: 0.1;
+  background: #ccc !important;
+}
+
+.sc-role-segment:hover {
+  opacity: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Role colors */
+.sc-role-segment[data-role="drums"] { background: #E91E63; }
+.sc-role-segment[data-role="bass"] { background: #673AB7; }
+.sc-role-segment[data-role="melodic"] { background: #00BCD4; }
+.sc-role-segment[data-role="vocal"] { background: #FF9800; }
+
+/* ===== Section Editor Panel ===== */
+.sc-section-editor {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sc-section-editor h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-editor-field {
+  margin-bottom: 12px;
+}
+
+.sc-editor-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sc-editor-field input,
+.sc-editor-field select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.sc-editor-field input:focus,
+.sc-editor-field select:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.sc-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.sc-editor-btn {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+  color: #555;
+  transition: all 0.15s;
+}
+
+.sc-editor-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.sc-editor-btn.danger {
+  color: #d32f2f;
+  border-color: #ef9a9a;
+}
+
+.sc-editor-btn.danger:hover {
+  background: #ffebee;
+}
+
+.sc-editor-btn.primary {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}
+
+.sc-editor-btn.primary:hover {
+  background: #1565c0;
+}
+
+/* ===== Section Editor Notes ===== */
+.sc-editor-notes {
+  margin-top: 12px;
+}
+
+.sc-editor-notes textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  color: #333;
+}
+
+.sc-editor-notes textarea:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+/* ===== No-data state ===== */
+.sc-no-data {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+}
+
+.sc-no-data h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
+  color: #666;
+}
+
+.sc-no-data p {
+  margin: 0;
+  font-size: 0.9rem;
+}
