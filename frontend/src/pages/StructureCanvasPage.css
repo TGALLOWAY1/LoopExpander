@@ -1,0 +1,113 @@
+/**
+ * Styles for StructureCanvasPage.
+ */
+.structure-canvas-page {
+  min-height: 100vh;
+  padding: 1.5rem 2rem;
+  background-color: #f5f5f5;
+}
+
+/* ===== Header ===== */
+.sc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  background: #fff;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sc-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sc-header-left h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #333;
+}
+
+.sc-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sc-meta {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.sc-demo-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: #fff3e0;
+  color: #e65100;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* ===== Content Layout ===== */
+.sc-content-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* ===== Timeline Panel ===== */
+.sc-timeline-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+/* ===== Sidebar ===== */
+.sc-sidebar {
+  position: sticky;
+  top: 1.5rem;
+}
+
+.sc-sidebar-empty {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  color: #888;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 0.9rem;
+}
+
+/* ===== Loading / Error ===== */
+.sc-loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+  font-size: 1rem;
+}
+
+.sc-error {
+  max-width: 500px;
+  margin: 60px auto;
+  text-align: center;
+  padding: 40px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sc-error h3 {
+  color: #d32f2f;
+  margin: 0 0 8px 0;
+}
+
+.sc-error p {
+  color: #666;
+  margin: 0 0 16px 0;
+}

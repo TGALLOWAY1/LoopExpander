@@ -2,9 +2,10 @@
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from pydantic import BaseModel
 
 from models.store import (
     REFERENCE_MIXES,
@@ -256,6 +257,251 @@ async def get_mix_regions(reference_id: str):
             for r in regions
         ],
         "count": len(regions),
+    }
+
+
+##############################################################################
+# Structure Canvas: Section editing endpoints (Phase 2B)
+##############################################################################
+
+
+class RegionPatch(BaseModel):
+    id: str
+    name: Optional[str] = None
+    label: Optional[str] = None
+    type: Optional[str] = None
+    startBar: Optional[float] = None
+    endBar: Optional[float] = None
+
+
+class PatchRegionsRequest(BaseModel):
+    patches: List[RegionPatch]
+
+
+class SplitRegionRequest(BaseModel):
+    regionId: str
+    splitBar: float
+
+
+class MergeRegionRequest(BaseModel):
+    regionId1: str
+    regionId2: str
+
+
+class RoleActivityOverride(BaseModel):
+    role: str
+    startBar: float
+    endBar: float
+    active: bool
+
+
+class PatchRoleActivityRequest(BaseModel):
+    overrides: List[RoleActivityOverride]
+
+
+def _regions_to_response(reference_id: str, regions, mix):
+    """Helper to serialize regions list to response dict."""
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+    return {
+        "referenceId": reference_id,
+        "regions": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "type": r.type,
+                "start": r.start,
+                "end": r.end,
+                "duration": r.duration,
+                "startBar": r.start / seconds_per_bar,
+                "endBar": r.end / seconds_per_bar,
+                "label": r.label or r.name,
+                "provisionalLabel": r.provisional_label or r.name,
+            }
+            for r in regions
+        ],
+        "count": len(regions),
+    }
+
+
+@router.patch("/{reference_id}/regions")
+async def patch_regions(reference_id: str, request: PatchRegionsRequest):
+    """Update region boundaries, labels, and types.
+
+    Accepts a list of partial updates keyed by region id.
+    """
+    mix = REFERENCE_MIXES.get(reference_id)
+    if not mix:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    if not regions:
+        raise HTTPException(status_code=404, detail="No regions found. Run analyze-mix first.")
+
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+    region_map = {r.id: r for r in regions}
+
+    for patch in request.patches:
+        region = region_map.get(patch.id)
+        if not region:
+            continue
+        if patch.name is not None:
+            region.name = patch.name
+        if patch.label is not None:
+            region.label = patch.label
+        if patch.type is not None:
+            region.type = patch.type
+        if patch.startBar is not None:
+            region.start = patch.startBar * seconds_per_bar
+        if patch.endBar is not None:
+            region.end = patch.endBar * seconds_per_bar
+
+    REFERENCE_REGIONS[reference_id] = list(region_map.values())
+    return _regions_to_response(reference_id, REFERENCE_REGIONS[reference_id], mix)
+
+
+@router.post("/{reference_id}/regions/split")
+async def split_region_endpoint(reference_id: str, request: SplitRegionRequest):
+    """Split a region at a given bar position into two regions."""
+    mix = REFERENCE_MIXES.get(reference_id)
+    if not mix:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    if not regions:
+        raise HTTPException(status_code=404, detail="No regions found.")
+
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+    split_time = request.splitBar * seconds_per_bar
+
+    target = None
+    target_idx = -1
+    for i, r in enumerate(regions):
+        if r.id == request.regionId:
+            target = r
+            target_idx = i
+            break
+
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Region {request.regionId} not found")
+
+    if split_time <= target.start or split_time >= target.end:
+        raise HTTPException(status_code=400, detail="Split point must be within the region boundaries")
+
+    from models.region import Region
+
+    first = Region(
+        id=str(uuid.uuid4()),
+        name=f"{target.name} (A)",
+        type=target.type,
+        start=target.start,
+        end=split_time,
+        motifs=[],
+        fills=[],
+        callResponse=[],
+        label=f"{target.label or target.name} (A)",
+        provisional_label=target.provisional_label,
+    )
+    second = Region(
+        id=str(uuid.uuid4()),
+        name=f"{target.name} (B)",
+        type=target.type,
+        start=split_time,
+        end=target.end,
+        motifs=[],
+        fills=[],
+        callResponse=[],
+        label=f"{target.label or target.name} (B)",
+        provisional_label=target.provisional_label,
+    )
+
+    regions = regions[:target_idx] + [first, second] + regions[target_idx + 1:]
+    REFERENCE_REGIONS[reference_id] = regions
+    return _regions_to_response(reference_id, regions, mix)
+
+
+@router.post("/{reference_id}/regions/merge")
+async def merge_regions_endpoint(reference_id: str, request: MergeRegionRequest):
+    """Merge two adjacent regions into one."""
+    mix = REFERENCE_MIXES.get(reference_id)
+    if not mix:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    if not regions:
+        raise HTTPException(status_code=404, detail="No regions found.")
+
+    idx1 = None
+    idx2 = None
+    for i, r in enumerate(regions):
+        if r.id == request.regionId1:
+            idx1 = i
+        if r.id == request.regionId2:
+            idx2 = i
+
+    if idx1 is None or idx2 is None:
+        raise HTTPException(status_code=404, detail="One or both regions not found")
+
+    # Ensure they are adjacent
+    if abs(idx1 - idx2) != 1:
+        raise HTTPException(status_code=400, detail="Regions must be adjacent to merge")
+
+    first_idx = min(idx1, idx2)
+    second_idx = max(idx1, idx2)
+    r1 = regions[first_idx]
+    r2 = regions[second_idx]
+
+    from models.region import Region
+
+    merged = Region(
+        id=r1.id,
+        name=r1.name,
+        type=r1.type,
+        start=r1.start,
+        end=r2.end,
+        motifs=r1.motifs + r2.motifs,
+        fills=r1.fills + r2.fills,
+        callResponse=r1.callResponse + r2.callResponse,
+        label=r1.label or r1.name,
+        provisional_label=r1.provisional_label,
+    )
+
+    regions = regions[:first_idx] + [merged] + regions[second_idx + 1:]
+    REFERENCE_REGIONS[reference_id] = regions
+    return _regions_to_response(reference_id, regions, mix)
+
+
+##############################################################################
+# Structure Canvas: Role activity override (Phase 2D)
+##############################################################################
+
+
+@router.patch("/{reference_id}/role-activity")
+async def patch_role_activity(reference_id: str, request: PatchRoleActivityRequest):
+    """Apply user overrides to role activity segments."""
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(status_code=404, detail=f"Reference mix {reference_id} not found")
+
+    timelines = REFERENCE_ROLE_ACTIVITY.get(reference_id, [])
+    if not timelines:
+        raise HTTPException(status_code=404, detail="Role activity not yet computed.")
+
+    from models.role_activity import ActivitySegment
+
+    timeline_map = {t.role: t for t in timelines}
+
+    for override in request.overrides:
+        timeline = timeline_map.get(override.role)
+        if not timeline:
+            continue
+        for seg in timeline.segments:
+            if seg.start_bar == override.startBar and seg.end_bar == override.endBar:
+                seg.active = override.active
+                break
+
+    REFERENCE_ROLE_ACTIVITY[reference_id] = list(timeline_map.values())
+    return {
+        "referenceId": reference_id,
+        "timelines": [t.to_dict() for t in REFERENCE_ROLE_ACTIVITY[reference_id]],
     }
 
 
