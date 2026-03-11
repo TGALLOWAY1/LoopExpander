@@ -1,4 +1,4 @@
-"""API routes for arrangement generation and management (Phase 5-6)."""
+"""API routes for arrangement generation and management (Phase 5-7)."""
 import uuid
 from typing import Optional, List
 
@@ -27,6 +27,10 @@ from arrangement.variation_engine import (
 from arrangement.guidance_engine import (
     generate_guidance_messages,
     GuidanceMessage,
+)
+from arrangement.guide_content import (
+    generate_guide_markers,
+    GuideMarker,
 )
 from utils.logger import get_logger
 
@@ -413,4 +417,68 @@ async def regenerate_guidance(project_id: str):
         "projectId": project_id,
         "messages": [m.to_dict() for m in messages],
         "total": len(messages),
+    }
+
+
+# ========== Guide Content (Phase 7) ==========
+
+
+@router.get("/{project_id}/guide-markers")
+async def get_guide_markers(project_id: str):
+    """Get guide markers for the arrangement timeline.
+
+    Generates fresh markers if none exist, or returns cached ones.
+    """
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    if project_id not in GUIDE_MARKERS:
+        interaction_labels = INTERACTION_LABELS.get(project_id, [])
+        energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+        markers = generate_guide_markers(
+            arrangement=arrangement,
+            interaction_labels=interaction_labels,
+            energy_curve=energy_curve,
+        )
+        GUIDE_MARKERS[project_id] = markers
+        logger.info(f"Generated {len(markers)} guide markers for {project_id}")
+
+    markers = GUIDE_MARKERS[project_id]
+    return {
+        "projectId": project_id,
+        "markers": [m.to_dict() for m in markers],
+        "total": len(markers),
+    }
+
+
+@router.post("/{project_id}/guide-markers/regenerate")
+async def regenerate_guide_markers(project_id: str):
+    """Force regeneration of guide markers."""
+    arrangement = ARRANGEMENTS.get(project_id)
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No arrangement found for project {project_id}.",
+        )
+
+    interaction_labels = INTERACTION_LABELS.get(project_id, [])
+    energy_curve = REFERENCE_ENERGY_CURVES.get(project_id)
+
+    markers = generate_guide_markers(
+        arrangement=arrangement,
+        interaction_labels=interaction_labels,
+        energy_curve=energy_curve,
+    )
+    GUIDE_MARKERS[project_id] = markers
+    logger.info(f"Regenerated {len(markers)} guide markers for {project_id}")
+
+    return {
+        "projectId": project_id,
+        "markers": [m.to_dict() for m in markers],
+        "total": len(markers),
     }
