@@ -78,6 +78,9 @@ def _get_active_ranges_for_role(
     section_end: float,
 ) -> List[Tuple[float, float]]:
     """Get list of (start_bar, end_bar) ranges where a role is active within a section."""
+    # Minimum overlap in bars to count as active (avoids floating-point edge cases)
+    MIN_OVERLAP_BARS = 0.1
+
     for timeline in timelines:
         if timeline.role != activity_role:
             continue
@@ -86,7 +89,7 @@ def _get_active_ranges_for_role(
             if seg.active and seg.start_bar < section_end and seg.end_bar > section_start:
                 range_start = max(seg.start_bar, section_start)
                 range_end = min(seg.end_bar, section_end)
-                if range_end > range_start:
+                if range_end - range_start >= MIN_OVERLAP_BARS:
                     ranges.append((range_start, range_end))
         return ranges if ranges else []
     # No timeline -> entire section is active
@@ -295,8 +298,9 @@ def generate_arrangement(
     seconds_per_bar = (60.0 / bpm) * 4.0 if bpm > 0 else 2.0
     sections: List[ArrangementSection] = []
     for region in regions:
-        start_bar = region.start / seconds_per_bar
-        end_bar = region.end / seconds_per_bar
+        # Round to 2 decimal places to avoid floating-point edge cases
+        start_bar = round(region.start / seconds_per_bar, 2)
+        end_bar = round(region.end / seconds_per_bar, 2)
 
         # Use label or provisional_label or region type
         label = region.label or region.provisional_label or region.type or "unknown"

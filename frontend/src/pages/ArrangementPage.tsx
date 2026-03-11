@@ -5,12 +5,11 @@
  * section labels carried over from the Structure Canvas, and controls
  * for generating/regenerating the arrangement.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
 import {
   Arrangement,
   ArrangementBlock,
-  ArrangementSection,
   generateArrangement,
   getArrangement,
   updateArrangementBlock,
@@ -40,9 +39,7 @@ const SECTION_COLORS: Record<string, string> = {
 /** Pixels per bar for the timeline. */
 const PX_PER_BAR = 24;
 const LANE_HEIGHT = 36;
-const LANE_GAP = 2;
 const SECTION_HEADER_HEIGHT = 32;
-const ROLE_LABEL_WIDTH = 100;
 
 export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.Element {
   const { referenceId } = useProject();
