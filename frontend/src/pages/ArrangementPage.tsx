@@ -5,7 +5,7 @@
  * section labels carried over from the Structure Canvas, and controls
  * for generating/regenerating the arrangement.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProject } from '../context/ProjectContext';
 import {
   Arrangement,
@@ -13,11 +13,15 @@ import {
   generateArrangement,
   getArrangement,
   updateArrangementBlock,
+  deleteArrangementBlock,
 } from '../api/arrangement';
 import { ROLE_COLORS, ROLE_LABELS, StemRole } from '../api/userLoop';
 import SuggestionPanel from '../components/arrangement/SuggestionPanel';
 import { GuidanceSummary } from '../components/arrangement/GuidanceOverlay';
 import GuideMarkerLayer from '../components/arrangement/GuideMarkerLayer';
+import BlockToolbar from '../components/arrangement/BlockToolbar';
+import AuditionPlayer from '../components/arrangement/AuditionPlayer';
+import ExportPanel from '../components/export/ExportPanel';
 import './ArrangementPage.css';
 
 interface ArrangementPageProps {
@@ -54,6 +58,18 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [suggestionKey, setSuggestionKey] = useState(0);
+  const [showExport, setShowExport] = useState(false);
+
+  // Drag-resize state
+  const [resizing, setResizing] = useState<{
+    blockId: string;
+    edge: 'left' | 'right';
+    startX: number;
+    originalStart: number;
+    originalEnd: number;
+  } | null>(null);
+  const resizingRef = useRef(resizing);
+  resizingRef.current = resizing;
 
   // Try to load existing arrangement on mount
   useEffect(() => {
@@ -117,6 +133,124 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
     }
   }, [referenceId, arrangement]);
 
+  const handleDeleteBlock = useCallback(async (block: ArrangementBlock) => {
+    if (!referenceId || !arrangement) return;
+    try {
+      await deleteArrangementBlock(referenceId, block.id);
+      setArrangement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          blocks: prev.blocks.filter((b) => b.id !== block.id),
+        };
+      });
+      setSelectedBlockId(null);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [referenceId, arrangement]);
+
+  // Drag-resize handlers
+  const handleResizeStart = useCallback((
+    e: React.MouseEvent,
+    blockId: string,
+    edge: 'left' | 'right',
+    block: ArrangementBlock,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setResizing({
+      blockId,
+      edge,
+      startX: e.clientX,
+      originalStart: block.startBar,
+      originalEnd: block.endBar,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!resizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const r = resizingRef.current;
+      if (!r || !arrangement) return;
+
+      const deltaX = e.clientX - r.startX;
+      const deltaBars = Math.round(deltaX / PX_PER_BAR);
+
+      setArrangement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          blocks: prev.blocks.map((b) => {
+            if (b.id !== r.blockId) return b;
+            if (r.edge === 'left') {
+              const newStart = Math.max(0, r.originalStart + deltaBars);
+              if (newStart >= b.endBar) return b;
+              return { ...b, startBar: newStart };
+            } else {
+              const newEnd = Math.min(prev.totalBars, r.originalEnd + deltaBars);
+              if (newEnd <= b.startBar) return b;
+              return { ...b, endBar: newEnd };
+            }
+          }),
+        };
+      });
+    };
+
+    const handleMouseUp = async () => {
+      const r = resizingRef.current;
+      if (!r || !referenceId || !arrangement) {
+        setResizing(null);
+        return;
+      }
+
+      // Find the block to save its new position
+      const block = arrangement.blocks.find((b) => b.id === r.blockId);
+      if (block && (block.startBar !== r.originalStart || block.endBar !== r.originalEnd)) {
+        try {
+          await updateArrangementBlock(referenceId, r.blockId, {
+            startBar: block.startBar,
+            endBar: block.endBar,
+          });
+        } catch (err: any) {
+          // Revert on error
+          setArrangement((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              blocks: prev.blocks.map((b) =>
+                b.id === r.blockId
+                  ? { ...b, startBar: r.originalStart, endBar: r.originalEnd }
+                  : b,
+              ),
+            };
+          });
+          setError(err.message);
+        }
+      }
+      setResizing(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing, referenceId, arrangement]);
+
+  // Deselect on background click
+  const handleTimelineClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.arr-block')) {
+      setSelectedBlockId(null);
+    }
+  }, []);
+
+  // Find the selected block and compute its position for the toolbar
+  const selectedBlock = arrangement?.blocks.find((b) => b.id === selectedBlockId) ?? null;
+
   if (!referenceId) {
     return (
       <div className="arr-page">
@@ -163,12 +297,20 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         </div>
         <div className="arr-header-right">
           {arrangement && (
-            <button
-              className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
-              onClick={() => setShowSuggestions((v) => !v)}
-            >
-              {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
-            </button>
+            <>
+              <button
+                className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
+                onClick={() => setShowSuggestions((v) => !v)}
+              >
+                {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
+              </button>
+              <button
+                className="arr-export-btn"
+                onClick={() => setShowExport(true)}
+              >
+                Export
+              </button>
+            </>
           )}
           <button
             className="arr-generate-btn"
@@ -265,7 +407,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
           )}
 
           {/* Role lanes */}
-          {roles.map((role) => {
+          {roles.map((role, roleIndex) => {
             const roleBlocks = arrangement.blocks.filter((b) => b.role === role);
             const roleLabel = ROLE_LABELS[role as StemRole] || role;
             const roleColor = ROLE_COLORS[role as StemRole] || '#9E9E9E';
@@ -286,6 +428,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
                   <div
                     className="arr-lane"
                     style={{ width: timelineWidth, height: LANE_HEIGHT }}
+                    onClick={handleTimelineClick}
                   >
                     {/* Bar grid lines */}
                     {Array.from({ length: totalBars }, (_, i) => (
@@ -305,7 +448,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
                       return (
                         <div
                           key={block.id}
-                          className={`arr-block ${!block.active ? 'muted' : ''} ${isSelected ? 'selected' : ''}`}
+                          className={`arr-block ${!block.active ? 'muted' : ''} ${isSelected ? 'selected' : ''} ${resizing?.blockId === block.id ? 'resizing' : ''}`}
                           style={{
                             left,
                             width: Math.max(width - 1, 1),
@@ -315,13 +458,40 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
                             borderColor: roleColor,
                           }}
                           title={`${role} | bars ${block.startBar.toFixed(1)}–${block.endBar.toFixed(1)}${block.variationType ? ` | ${block.variationType}` : ''}`}
-                          onClick={() => setSelectedBlockId(block.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedBlockId(block.id);
+                          }}
                           onDoubleClick={() => handleToggleBlock(block)}
                         >
+                          {/* Resize handles */}
+                          {isSelected && (
+                            <>
+                              <div
+                                className="arr-resize-handle left"
+                                onMouseDown={(e) => handleResizeStart(e, block.id, 'left', block)}
+                              />
+                              <div
+                                className="arr-resize-handle right"
+                                onMouseDown={(e) => handleResizeStart(e, block.id, 'right', block)}
+                              />
+                            </>
+                          )}
                           {block.variationType && (
                             <span className="arr-block-badge">
                               {block.variationType}
                             </span>
+                          )}
+                          {/* Block toolbar for selected block */}
+                          {isSelected && selectedBlock && (
+                            <BlockToolbar
+                              block={selectedBlock}
+                              positionLeft={0}
+                              positionTop={0}
+                              onToggleMute={handleToggleBlock}
+                              onDelete={handleDeleteBlock}
+                              onClose={() => setSelectedBlockId(null)}
+                            />
                           )}
                         </div>
                       );
@@ -348,7 +518,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
             ))}
             <span className="arr-legend-sep">|</span>
             <span className="arr-legend-hint">
-              Double-click a block to toggle mute/unmute
+              Click to select | Double-click to mute/unmute | Drag edges to resize
             </span>
           </div>
         </div>
@@ -367,7 +537,25 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         {referenceId && (
           <GuidanceSummary key={`guid-${suggestionKey}`} projectId={referenceId} />
         )}
+
+        {/* Audition Player (below guidance) */}
+        {referenceId && arrangement && (
+          <AuditionPlayer
+            key={`aud-${suggestionKey}`}
+            projectId={referenceId}
+            sections={arrangement.sections}
+            roles={roles}
+          />
+        )}
         </>
+      )}
+
+      {/* Export Panel Modal */}
+      {showExport && referenceId && (
+        <ExportPanel
+          projectId={referenceId}
+          onClose={() => setShowExport(false)}
+        />
       )}
     </div>
   );

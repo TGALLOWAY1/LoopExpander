@@ -56,6 +56,22 @@
   background: #e0e0e0;
 }
 
+.arr-export-btn {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #43a047;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.arr-export-btn:hover {
+  background: #388e3c;
+}
+
 .arr-generate-btn {
   padding: 8px 18px;
   font-size: 0.9rem;
@@ -293,6 +309,36 @@
 
 .arr-block.selected {
   box-shadow: 0 0 0 2px #333;
+  z-index: 10;
+}
+
+.arr-block.resizing {
+  opacity: 0.7;
+  z-index: 11;
+}
+
+/* ===== Resize Handles ===== */
+.arr-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.arr-resize-handle.left {
+  left: -2px;
+  border-left: 2px solid rgba(0, 0, 0, 0.4);
+}
+
+.arr-resize-handle.right {
+  right: -2px;
+  border-right: 2px solid rgba(0, 0, 0, 0.4);
+}
+
+.arr-resize-handle:hover {
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .arr-block-badge {
