@@ -261,6 +261,106 @@ async def get_tonal_balance(reference_id: str):
     }
 
 
+@router.get("/{reference_id}/structural-patterns")
+async def get_structural_patterns(reference_id: str):
+    """Get the unified structural pattern bundle for a reference mix.
+
+    Assembles all analysis results (regions, energy, motifs, call-response,
+    tonal balance) into a single response.
+    """
+    mix = REFERENCE_MIXES.get(reference_id)
+    if not mix:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference mix {reference_id} not found",
+        )
+
+    from models.structural_patterns import (
+        StructuralPatternBundle,
+        LoopInstance,
+        MotifGroupSummary,
+        CallResponsePairSummary,
+        RegionSummary,
+        MultiEnergyCurvesSummary,
+        RegionTonalBalanceSummary,
+    )
+    from models.store import REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE
+
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+    bundle = StructuralPatternBundle()
+
+    # Regions
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    for r in regions:
+        bundle.regions.append(RegionSummary(
+            id=r.id, name=r.name, type=r.type,
+            start=r.start, end=r.end,
+            start_bar=r.start / seconds_per_bar,
+            end_bar=r.end / seconds_per_bar,
+            label=getattr(r, 'label', r.name) or r.name,
+        ))
+
+    # Energy curves
+    energy_data = REFERENCE_ENERGY_CURVES.get(reference_id)
+    if energy_data:
+        bundle.bar_energies = energy_data.get("barEnergies", [])
+        bundle.total_bars = len(bundle.bar_energies)
+        mc = energy_data.get("multiCurves")
+        if mc:
+            bundle.energy_curves = MultiEnergyCurvesSummary(
+                lufs=mc.get("lufs", []),
+                spectral_centroid=mc.get("spectralCentroid", []),
+                bass_energy=mc.get("bassEnergy", []),
+                transient_density=mc.get("transientDensity", []),
+            )
+
+    # Motifs → loops and groups
+    motif_data = REFERENCE_MOTIFS.get(reference_id)
+    if motif_data:
+        instances, groups = motif_data
+        for inst in instances:
+            bundle.loops.append(LoopInstance(
+                motif_id=inst.id, group_id=inst.group_id or "",
+                stem_role=inst.stem_role,
+                start_time=inst.start_time, end_time=inst.end_time,
+                similarity_type=getattr(inst, 'similarity_type', 'unique'),
+            ))
+        for grp in groups:
+            exact_ct = sum(1 for m in grp.members if getattr(m, 'similarity_type', '') == 'exact')
+            var_ct = sum(1 for m in grp.members if getattr(m, 'similarity_type', '') == 'variation')
+            stem = grp.members[0].stem_role if grp.members else ""
+            bundle.motif_groups.append(MotifGroupSummary(
+                id=grp.id, member_count=len(grp.members),
+                exact_count=exact_ct, variation_count=var_ct,
+                stem_role=stem,
+            ))
+
+    # Call-response pairs
+    cr_pairs = REFERENCE_CALL_RESPONSE.get(reference_id, [])
+    for pair in cr_pairs:
+        if hasattr(pair, 'from_motif_id'):
+            bundle.call_response_pairs.append(CallResponsePairSummary(
+                id=pair.id, from_stem=pair.from_stem_role, to_stem=pair.to_stem_role,
+                from_time=pair.from_time, to_time=pair.to_time,
+                time_offset=pair.time_offset, confidence=pair.confidence,
+                region_id=pair.region_id,
+            ))
+
+    # Tonal balance
+    tb_data = REFERENCE_TONAL_BALANCE.get(reference_id, [])
+    for tb in tb_data:
+        bundle.tonal_balance.append(RegionTonalBalanceSummary(
+            region_id=tb["regionId"],
+            low=tb["low"], low_mid=tb["lowMid"], mid=tb["mid"],
+            high_mid=tb["highMid"], high=tb["high"],
+        ))
+
+    return {
+        "referenceId": reference_id,
+        **bundle.to_dict(),
+    }
+
+
 @router.get("/{reference_id}/mix-regions")
 async def get_mix_regions(reference_id: str):
     """Get detected regions for a reference mix.
