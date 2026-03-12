@@ -111,3 +111,60 @@
   color: #666;
   margin: 0 0 16px 0;
 }
+
+/* ===== View Mode Toggle ===== */
+.sc-view-mode-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sc-view-mode-btn {
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: none;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sc-view-mode-btn:not(:last-child) {
+  border-right: 1px solid #ddd;
+}
+
+.sc-view-mode-btn.active {
+  background: #1976d2;
+  color: #fff;
+}
+
+.sc-view-mode-btn:hover:not(.active) {
+  background: #f0f0f0;
+}
+
+/* ===== Focused Section Badge ===== */
+.sc-focused-section-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== Song View ===== */
+.sc-song-view {
+  grid-template-columns: 1fr;
+}
+
+.sc-song-view-hint {
+  text-align: center;
+  padding: 12px;
+  color: #999;
+  font-size: 0.85rem;
+  font-style: italic;
+  border-top: 1px solid #eee;
+}

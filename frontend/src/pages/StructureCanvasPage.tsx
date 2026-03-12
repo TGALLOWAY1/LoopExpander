@@ -140,6 +140,8 @@ const DEMO_ENERGY: EnergyCurveResponse = {
 
 const BAR_WIDTH = 24;
 
+type ViewMode = 'song' | 'section';
+
 const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
   onBack,
   demoMode = false,
@@ -154,9 +156,38 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // View mode state: song overview vs section detail
+  const [viewMode, setViewMode] = useState<ViewMode>('song');
+  const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
+
   // Interaction label state
   const [interactionLabels, setInteractionLabels] = useState<InteractionLabel[]>([]);
   const [activeLabelType, setActiveLabelType] = useState<InteractionLabelType>('A');
+
+  // Handle clicking a section in Song View to enter Section View
+  const handleSectionClick = useCallback((sectionId: string) => {
+    if (viewMode === 'song') {
+      setFocusedSectionId(sectionId);
+      setSelectedSectionId(sectionId);
+      setViewMode('section');
+    } else {
+      setSelectedSectionId(sectionId);
+    }
+  }, [viewMode]);
+
+  // Return to Song View
+  const handleBackToSongView = useCallback(() => {
+    setViewMode('song');
+    setFocusedSectionId(null);
+    setSelectedSectionId(null);
+  }, []);
+
+  // Compute section-filtered data for Section View
+  const focusedSection = sections.find((s) => s.id === focusedSectionId) ?? null;
+  const sectionViewBars = focusedSection
+    ? Math.ceil(focusedSection.endBar - focusedSection.startBar)
+    : totalBars;
+  const sectionViewBarOffset = focusedSection ? Math.floor(focusedSection.startBar) : 0;
 
   // Load data from API or use demo data
   useEffect(() => {
@@ -456,26 +487,51 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
           )}
           <h2>Structure Canvas</h2>
           {demoMode && <span className="sc-demo-badge">Demo</span>}
+          <div className="sc-view-mode-toggle">
+            <button
+              className={`sc-view-mode-btn ${viewMode === 'song' ? 'active' : ''}`}
+              onClick={handleBackToSongView}
+            >
+              Song View
+            </button>
+            <button
+              className={`sc-view-mode-btn ${viewMode === 'section' ? 'active' : ''}`}
+              onClick={() => {
+                if (sections.length > 0 && !focusedSectionId) {
+                  setFocusedSectionId(sections[0].id);
+                  setSelectedSectionId(sections[0].id);
+                }
+                setViewMode('section');
+              }}
+            >
+              Section View
+            </button>
+          </div>
         </div>
         <div className="sc-header-right">
+          {viewMode === 'section' && focusedSection && (
+            <span className="sc-focused-section-badge" style={{ background: focusedSection.color }}>
+              {focusedSection.label}
+            </span>
+          )}
           <span className="sc-meta">
             {sections.length} sections &middot; {totalBars} bars
           </span>
         </div>
       </div>
 
-      <div className="sc-content-layout">
+      <div className={`sc-content-layout ${viewMode === 'song' ? 'sc-song-view' : 'sc-section-view'}`}>
         <div className="sc-timeline-panel" ref={scrollRef}>
-          {/* Section timeline */}
+          {/* Section timeline — always visible */}
           <SectionTimeline
             sections={sections}
             totalBars={totalBars}
             barWidth={BAR_WIDTH}
-            selectedSectionId={selectedSectionId}
-            onSelectSection={setSelectedSectionId}
+            selectedSectionId={viewMode === 'song' ? focusedSectionId : selectedSectionId}
+            onSelectSection={handleSectionClick}
           />
 
-          {/* Energy overlay */}
+          {/* Energy overlay — always visible */}
           {energyCurve && (
             <EnergyOverlay
               energyCurve={energyCurve}
@@ -484,48 +540,62 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
             />
           )}
 
-          {/* Role activity lanes */}
-          {roleTimelines.length > 0 && (
-            <RoleActivityLanes
-              timelines={roleTimelines}
-              totalBars={totalBars}
-              barWidth={BAR_WIDTH}
-              onToggleSegment={handleRoleToggle}
-            />
+          {/* Section View: detailed layers (role lanes, interactions) */}
+          {viewMode === 'section' && (
+            <>
+              {/* Role activity lanes */}
+              {roleTimelines.length > 0 && (
+                <RoleActivityLanes
+                  timelines={roleTimelines}
+                  totalBars={totalBars}
+                  barWidth={BAR_WIDTH}
+                  onToggleSegment={handleRoleToggle}
+                />
+              )}
+
+              {/* Interaction labeler */}
+              <InteractionLabeler
+                labels={interactionLabels}
+                sections={sections}
+                totalBars={totalBars}
+                barWidth={BAR_WIDTH}
+                activeLabelType={activeLabelType}
+                onLabelTypeChange={setActiveLabelType}
+                onCreateLabel={handleCreateLabel}
+                onDeleteLabel={handleDeleteLabel}
+                onUpdateLabel={handleUpdateLabel}
+                onDuplicatePattern={handleDuplicatePattern}
+              />
+            </>
           )}
 
-          {/* Interaction labeler (Phase 3) */}
-          <InteractionLabeler
-            labels={interactionLabels}
-            sections={sections}
-            totalBars={totalBars}
-            barWidth={BAR_WIDTH}
-            activeLabelType={activeLabelType}
-            onLabelTypeChange={setActiveLabelType}
-            onCreateLabel={handleCreateLabel}
-            onDeleteLabel={handleDeleteLabel}
-            onUpdateLabel={handleUpdateLabel}
-            onDuplicatePattern={handleDuplicatePattern}
-          />
-        </div>
-
-        {/* Section editor sidebar */}
-        <div className="sc-sidebar">
-          {selectedSection ? (
-            <SectionEditor
-              section={selectedSection}
-              sections={sections}
-              onUpdate={handleSectionUpdate}
-              onSplit={handleSplit}
-              onMerge={handleMerge}
-              onDeselect={() => setSelectedSectionId(null)}
-            />
-          ) : (
-            <div className="sc-sidebar-empty">
-              <p>Click a section on the timeline to edit it.</p>
+          {/* Song View: hint to click a section */}
+          {viewMode === 'song' && (
+            <div className="sc-song-view-hint">
+              Click a section to view details
             </div>
           )}
         </div>
+
+        {/* Section editor sidebar — only in section view */}
+        {viewMode === 'section' && (
+          <div className="sc-sidebar">
+            {selectedSection ? (
+              <SectionEditor
+                section={selectedSection}
+                sections={sections}
+                onUpdate={handleSectionUpdate}
+                onSplit={handleSplit}
+                onMerge={handleMerge}
+                onDeselect={() => setSelectedSectionId(null)}
+              />
+            ) : (
+              <div className="sc-sidebar-empty">
+                <p>Click a section on the timeline to edit it.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
