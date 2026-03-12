@@ -15,12 +15,14 @@ interface AuditionPlayerProps {
   projectId: string;
   sections: ArrangementSection[];
   roles: string[];
+  autoPlay?: boolean;
 }
 
 export default function AuditionPlayer({
   projectId,
   sections,
   roles,
+  autoPlay,
 }: AuditionPlayerProps): JSX.Element {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -34,6 +36,8 @@ export default function AuditionPlayer({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const animFrameRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const autoPlayedRef = useRef(false);
 
   // Cleanup audio URL on unmount
   useEffect(() => {
@@ -44,6 +48,17 @@ export default function AuditionPlayer({
       cancelAnimationFrame(animFrameRef.current);
     };
   }, []);
+
+  // Auto-scroll into view and auto-select first section when autoPlay is true
+  useEffect(() => {
+    if (autoPlay && !autoPlayedRef.current && sections.length > 0) {
+      autoPlayedRef.current = true;
+      // Scroll player into view
+      containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Auto-select first section
+      setSelectedSectionId(sections[0].id);
+    }
+  }, [autoPlay, sections]);
 
   const handlePlay = useCallback(async () => {
     if (!selectedSectionId) return;
@@ -161,7 +176,7 @@ export default function AuditionPlayer({
   const selectedSection = sections.find((s) => s.id === selectedSectionId);
 
   return (
-    <div className="audition-player">
+    <div className="audition-player" ref={containerRef}>
       <div className="audition-header">
         <span className="audition-title">Section Audition</span>
       </div>

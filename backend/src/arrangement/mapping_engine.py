@@ -20,6 +20,7 @@ import math
 from typing import List, Dict, Optional, Tuple
 
 from arrangement.models import Arrangement, ArrangementSection, ArrangementBlock
+from arrangement.presets import ArrangementPreset, PresetSection
 from models.region import Region
 from models.role_activity import RoleActivityTimeline, ActivitySegment
 from models.interaction_label import InteractionLabel
@@ -269,6 +270,83 @@ def _apply_interaction_labels_to_blocks(
     return blocks
 
 
+def _generate_from_preset(
+    project_id: str,
+    preset: ArrangementPreset,
+    user_loops: UserLoopBundle,
+    bpm: float = 120.0,
+) -> Arrangement:
+    """Generate an arrangement from a genre preset template.
+
+    Uses the preset's section definitions instead of reference analysis.
+    Role activity is determined by preset density/active_roles hints.
+    """
+    arrangement_id = str(uuid.uuid4())
+    sections: List[ArrangementSection] = []
+    all_blocks: List[ArrangementBlock] = []
+
+    cursor_bar = 0.0
+    for ps in preset.sections:
+        section_id = str(uuid.uuid4())
+        start_bar = cursor_bar
+        end_bar = cursor_bar + ps.bars
+
+        sections.append(ArrangementSection(
+            id=section_id,
+            name=ps.label,
+            label=ps.label,
+            start_bar=start_bar,
+            end_bar=end_bar,
+            type=ps.type,
+        ))
+
+        # Determine which stem roles to place
+        available_roles = set(s.role for s in user_loops.stems)
+        muted_activity_roles = set(ps.muted_roles)
+
+        for stem_role in available_roles:
+            if stem_role == "fx":
+                continue
+
+            # Map stem role to activity role to check preset hints
+            activity_role = STEM_ROLE_TO_ACTIVITY_ROLE.get(stem_role)
+
+            # Check if preset says this role should be muted
+            if activity_role and activity_role in muted_activity_roles:
+                continue
+
+            # If preset specifies active_roles, only include those
+            if ps.active_roles and activity_role and activity_role not in ps.active_roles:
+                continue
+
+            stems = _find_stems_for_role(user_loops, stem_role)
+            if not stems:
+                continue
+
+            primary_stem = stems[0]
+            blocks = _fill_range_with_loop(
+                stem=primary_stem,
+                range_start=start_bar,
+                range_end=end_bar,
+                section_id=section_id,
+                role=stem_role,
+            )
+            all_blocks.extend(blocks)
+
+        cursor_bar = end_bar
+
+    total_bars = int(math.ceil(cursor_bar))
+
+    return Arrangement(
+        id=arrangement_id,
+        project_id=project_id,
+        sections=sections,
+        blocks=all_blocks,
+        total_bars=total_bars,
+        bpm=bpm,
+    )
+
+
 def generate_arrangement(
     project_id: str,
     regions: List[Region],
@@ -277,6 +355,7 @@ def generate_arrangement(
     user_loops: UserLoopBundle,
     energy_curve: Optional[dict] = None,
     bpm: float = 120.0,
+    preset: Optional[ArrangementPreset] = None,
 ) -> Arrangement:
     """Generate an arrangement by mapping user loops onto the reference structure.
 
@@ -288,10 +367,15 @@ def generate_arrangement(
         user_loops: User's uploaded loop stems.
         energy_curve: Energy curve data with barEnergies and transitionMarkers.
         bpm: Reference BPM.
+        preset: Optional genre preset to use instead of reference analysis.
 
     Returns:
         A complete Arrangement with sections and blocks.
     """
+    # If a preset is provided, use preset-based generation
+    if preset is not None:
+        return _generate_from_preset(project_id, preset, user_loops, bpm)
+
     arrangement_id = str(uuid.uuid4())
 
     # Build arrangement sections from regions

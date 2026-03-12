@@ -33,6 +33,30 @@ export interface ArrangementSection {
 }
 
 /**
+ * A section within a genre preset template.
+ */
+export interface PresetSection {
+  type: string;
+  label: string;
+  bars: number;
+  density: number;
+  activeRoles: string[];
+  mutedRoles: string[];
+}
+
+/**
+ * A genre-based arrangement preset.
+ */
+export interface ArrangementPreset {
+  id: string;
+  name: string;
+  genre: string;
+  description: string;
+  bpmRange: [number, number];
+  sections: PresetSection[];
+}
+
+/**
  * The full arrangement response.
  */
 export interface Arrangement {
@@ -45,17 +69,33 @@ export interface Arrangement {
 }
 
 /**
+ * Fetch all available genre presets.
+ */
+export async function getPresets(): Promise<ArrangementPreset[]> {
+  const response = await fetch(`${API_BASE_URL}/api/project/presets`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch presets' }));
+    throw new Error(error.detail || `Failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Generate an arrangement from the approved structure and user loops.
+ * Optionally pass a presetId to use a genre template instead of reference analysis.
  */
 export async function generateArrangement(
   projectId: string,
+  presetId?: string,
 ): Promise<Arrangement> {
   const response = await fetch(
     `${API_BASE_URL}/api/project/${projectId}/arrange`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ presetId: presetId || null }),
     },
   );
 

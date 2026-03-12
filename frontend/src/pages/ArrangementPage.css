@@ -72,6 +72,39 @@
   background: #388e3c;
 }
 
+.arr-play-all-btn {
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: #E91E63;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.arr-play-all-btn:hover {
+  background: #C2185B;
+}
+
+.arr-preset-selector {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.arr-preset-selector:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
 .arr-generate-btn {
   padding: 8px 18px;
   font-size: 0.9rem;

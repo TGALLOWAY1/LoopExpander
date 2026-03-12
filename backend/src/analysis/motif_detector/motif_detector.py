@@ -56,8 +56,9 @@ class MotifInstance:
     features: np.ndarray  # Feature vector (e.g., MFCCs)
     group_id: Optional[str] = None  # Assigned after clustering
     is_variation: bool = False  # True if similar but not identical to canonical exemplar
+    similarity_type: Literal["exact", "variation", "unique"] = "unique"  # exact|variation|unique
     region_ids: List[str] = field(default_factory=list)  # Regions this motif belongs to
-    
+
     @property
     def duration(self) -> float:
         """Get the duration of the motif instance in seconds."""
@@ -319,33 +320,67 @@ def _cluster_motifs(
                 groups[group_id] = []
             groups[group_id].append(instance)
     
-    # Create MotifGroup objects and mark variations
+    # Create MotifGroup objects, mark variations, and classify similarity types
     motif_groups = []
     for group_id, members in groups.items():
         if len(members) == 0:
             continue
-        
+
+        # Single-member groups are unique
+        if len(members) == 1:
+            members[0].similarity_type = "unique"
+            group = MotifGroup(id=group_id, members=members)
+            motif_groups.append(group)
+            continue
+
         # Compute centroid of the group
         group_features = np.array([m.features for m in members])
         centroid = np.mean(group_features, axis=0)
-        
+
         # Mark exemplar (closest to centroid) and variations
         distances_to_centroid = [
             np.linalg.norm(m.features - centroid) for m in members
         ]
         exemplar_idx = np.argmin(distances_to_centroid)
-        
-        # Mark all as variations except the exemplar
+
+        # Classify similarity types using pairwise distances within the group
+        # Normalize features for fair comparison
+        group_scaler = StandardScaler()
+        group_normalized = group_scaler.fit_transform(group_features)
+
+        from scipy.spatial.distance import pdist, squareform
+        pairwise_dists = squareform(pdist(group_normalized, metric='euclidean'))
+
+        # Compute per-member average distance to all others in the group
+        # Then classify: exact (very close), variation (moderate), unique (singleton)
         for i, member in enumerate(members):
-            if i != exemplar_idx:
+            other_dists = [pairwise_dists[i][j] for j in range(len(members)) if j != i]
+            avg_dist = float(np.mean(other_dists)) if other_dists else float('inf')
+
+            # Thresholds based on normalized feature distances
+            # exact: avg distance < 0.8 (very similar features)
+            # variation: avg distance < 2.0 (moderately similar)
+            if avg_dist < 0.8:
+                member.similarity_type = "exact"
+                member.is_variation = False
+            elif avg_dist < 2.0:
+                member.similarity_type = "variation"
                 member.is_variation = True
-        
+            else:
+                member.similarity_type = "unique"
+                member.is_variation = True
+
+        # Override exemplar: always mark closest-to-centroid as not a variation
+        members[exemplar_idx].is_variation = False
+        if members[exemplar_idx].similarity_type == "unique":
+            members[exemplar_idx].similarity_type = "variation"
+
         # Create group
         group = MotifGroup(id=group_id, members=members)
         motif_groups.append(group)
-    
+
     logger.info(f"Created {len(motif_groups)} motif groups from {len(instances)} instances")
-    
+
     return instances, motif_groups
 
 

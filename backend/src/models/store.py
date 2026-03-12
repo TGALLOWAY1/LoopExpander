@@ -27,6 +27,10 @@ REFERENCE_ENERGY_CURVES: Dict[str, dict] = {}
 # In-memory storage for detected regions per reference
 REFERENCE_REGIONS: Dict[str, List[Region]] = {}
 
+# In-memory storage for tonal balance per reference
+# Maps reference_id -> list of RegionTonalBalance dicts
+REFERENCE_TONAL_BALANCE: Dict[str, List[dict]] = {}
+
 # In-memory storage for detected motifs per reference
 # Maps reference_id -> (instances, groups)
 REFERENCE_MOTIFS: Dict[str, tuple] = {}

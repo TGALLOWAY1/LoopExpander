@@ -12,6 +12,7 @@ from models.store import (
     REFERENCE_REGIONS,
     REFERENCE_ROLE_ACTIVITY,
     REFERENCE_ENERGY_CURVES,
+    REFERENCE_TONAL_BALANCE,
     INTERACTION_LABELS,
 )
 from models.interaction_label import InteractionLabel, duplicate_labels_to_section
@@ -19,6 +20,7 @@ from models.reference_mix import ReferenceMix
 from stem_ingest.ingest_service import load_reference_mix
 from analysis.role_activity.role_detector import detect_role_activity
 from analysis.energy.energy_curve import compute_energy_curve
+from analysis.energy.tonal_balance import compute_tonal_balance
 from analysis.region_detector.region_detector import detect_regions
 from models.reference_bundle import ReferenceBundle
 from stem_ingest.audio_file import AudioFile
@@ -154,6 +156,16 @@ async def analyze_reference_mix(reference_id: str):
             f"{len(energy_result.transition_markers)} transitions"
         )
 
+        # 4. Tonal balance per region
+        logger.info("Computing tonal balance...")
+        tonal_balance = compute_tonal_balance(
+            audio=audio.samples,
+            sr=audio.sr,
+            regions=regions,
+        )
+        REFERENCE_TONAL_BALANCE[reference_id] = [tb.to_dict() for tb in tonal_balance]
+        logger.info(f"Tonal balance computed for {len(tonal_balance)} regions")
+
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
@@ -220,6 +232,132 @@ async def get_energy_curve(reference_id: str):
     return {
         "referenceId": reference_id,
         **energy_data,
+    }
+
+
+@router.get("/{reference_id}/tonal-balance")
+async def get_tonal_balance(reference_id: str):
+    """Get 5-band tonal balance per region for a reference mix.
+
+    Returns:
+        JSON with per-region tonal balance (low, lowMid, mid, highMid, high).
+    """
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference mix {reference_id} not found",
+        )
+
+    tonal_data = REFERENCE_TONAL_BALANCE.get(reference_id)
+    if not tonal_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tonal balance not yet computed for {reference_id}. Run analyze-mix first.",
+        )
+
+    return {
+        "referenceId": reference_id,
+        "tonalBalance": tonal_data,
+    }
+
+
+@router.get("/{reference_id}/structural-patterns")
+async def get_structural_patterns(reference_id: str):
+    """Get the unified structural pattern bundle for a reference mix.
+
+    Assembles all analysis results (regions, energy, motifs, call-response,
+    tonal balance) into a single response.
+    """
+    mix = REFERENCE_MIXES.get(reference_id)
+    if not mix:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference mix {reference_id} not found",
+        )
+
+    from models.structural_patterns import (
+        StructuralPatternBundle,
+        LoopInstance,
+        MotifGroupSummary,
+        CallResponsePairSummary,
+        RegionSummary,
+        MultiEnergyCurvesSummary,
+        RegionTonalBalanceSummary,
+    )
+    from models.store import REFERENCE_MOTIFS, REFERENCE_CALL_RESPONSE
+
+    seconds_per_bar = (60.0 / mix.bpm) * 4.0
+    bundle = StructuralPatternBundle()
+
+    # Regions
+    regions = REFERENCE_REGIONS.get(reference_id, [])
+    for r in regions:
+        bundle.regions.append(RegionSummary(
+            id=r.id, name=r.name, type=r.type,
+            start=r.start, end=r.end,
+            start_bar=r.start / seconds_per_bar,
+            end_bar=r.end / seconds_per_bar,
+            label=getattr(r, 'label', r.name) or r.name,
+        ))
+
+    # Energy curves
+    energy_data = REFERENCE_ENERGY_CURVES.get(reference_id)
+    if energy_data:
+        bundle.bar_energies = energy_data.get("barEnergies", [])
+        bundle.total_bars = len(bundle.bar_energies)
+        mc = energy_data.get("multiCurves")
+        if mc:
+            bundle.energy_curves = MultiEnergyCurvesSummary(
+                lufs=mc.get("lufs", []),
+                spectral_centroid=mc.get("spectralCentroid", []),
+                bass_energy=mc.get("bassEnergy", []),
+                transient_density=mc.get("transientDensity", []),
+            )
+
+    # Motifs → loops and groups
+    motif_data = REFERENCE_MOTIFS.get(reference_id)
+    if motif_data:
+        instances, groups = motif_data
+        for inst in instances:
+            bundle.loops.append(LoopInstance(
+                motif_id=inst.id, group_id=inst.group_id or "",
+                stem_role=inst.stem_role,
+                start_time=inst.start_time, end_time=inst.end_time,
+                similarity_type=getattr(inst, 'similarity_type', 'unique'),
+            ))
+        for grp in groups:
+            exact_ct = sum(1 for m in grp.members if getattr(m, 'similarity_type', '') == 'exact')
+            var_ct = sum(1 for m in grp.members if getattr(m, 'similarity_type', '') == 'variation')
+            stem = grp.members[0].stem_role if grp.members else ""
+            bundle.motif_groups.append(MotifGroupSummary(
+                id=grp.id, member_count=len(grp.members),
+                exact_count=exact_ct, variation_count=var_ct,
+                stem_role=stem,
+            ))
+
+    # Call-response pairs
+    cr_pairs = REFERENCE_CALL_RESPONSE.get(reference_id, [])
+    for pair in cr_pairs:
+        if hasattr(pair, 'from_motif_id'):
+            bundle.call_response_pairs.append(CallResponsePairSummary(
+                id=pair.id, from_stem=pair.from_stem_role, to_stem=pair.to_stem_role,
+                from_time=pair.from_time, to_time=pair.to_time,
+                time_offset=pair.time_offset, confidence=pair.confidence,
+                region_id=pair.region_id,
+            ))
+
+    # Tonal balance
+    tb_data = REFERENCE_TONAL_BALANCE.get(reference_id, [])
+    for tb in tb_data:
+        bundle.tonal_balance.append(RegionTonalBalanceSummary(
+            region_id=tb["regionId"],
+            low=tb["low"], low_mid=tb["lowMid"], mid=tb["mid"],
+            high_mid=tb["highMid"], high=tb["high"],
+        ))
+
+    return {
+        "referenceId": reference_id,
+        **bundle.to_dict(),
     }
 
 

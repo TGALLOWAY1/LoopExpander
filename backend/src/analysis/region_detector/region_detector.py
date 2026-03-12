@@ -1,12 +1,17 @@
 """Region detection using novelty curves and structural priors."""
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import numpy as np
 import librosa
 from scipy.signal import find_peaks
 
 from models.region import Region
 from models.reference_bundle import ReferenceBundle
-from .features import compute_novelty_curve, compute_rms_envelope
+from .features import (
+    compute_novelty_curve,
+    compute_rms_envelope,
+    compute_spectral_centroid,
+    compute_transient_density,
+)
 from .priors import estimate_initial_boundaries
 from config import MIN_BOUNDARY_GAP_SEC, MIN_REGION_DURATION_SEC
 from utils.logger import get_logger
@@ -205,36 +210,39 @@ def compute_region_stats(
     rms: np.ndarray,
     times: np.ndarray,
     track_duration: float,
+    spectral_centroid: Optional[np.ndarray] = None,
+    transient_density: Optional[np.ndarray] = None,
 ) -> List[Dict]:
     """
-    Compute energy statistics for each region.
-    
+    Compute energy and spectral statistics for each region.
+
     Args:
         regions: List of Region objects
         rms: RMS envelope array
         times: Time array corresponding to RMS frames
         track_duration: Total track duration in seconds
-    
+        spectral_centroid: Optional spectral centroid array (same frame count as rms)
+        transient_density: Optional transient density array (same frame count as rms)
+
     Returns:
         List of dictionaries with region statistics
     """
     stats = []
-    
+
     for region in regions:
         start, end = region.start, region.end
-        
+
         # Get frame indices within region
         idx = np.where((times >= start) & (times < end))[0]
-        
+
         if len(idx) == 0:
-            # Fallback: use nearest frame
             center_time = (start + end) / 2.0
             nearest = np.argmin(np.abs(times - center_time))
             idx = np.array([nearest])
-        
+
         region_rms = rms[idx]
         mean_rms = float(region_rms.mean())
-        
+
         n = len(region_rms)
         if n >= 3:
             third = max(1, n // 3)
@@ -242,29 +250,63 @@ def compute_region_stats(
             end_rms = float(region_rms[-third:].mean())
         else:
             start_rms = end_rms = mean_rms
-        
+
         energy_slope = end_rms - start_rms
-        
+
         center_time = 0.5 * (start + end)
         relative_pos = center_time / max(track_duration, 1e-6)
-        
-        stats.append({
+
+        stat = {
             "mean_rms": mean_rms,
             "start_rms": start_rms,
             "end_rms": end_rms,
             "energy_slope": energy_slope,
             "relative_pos": relative_pos,
             "duration": end - start,
-        })
-    
+        }
+
+        # Multi-dimensional: spectral centroid
+        if spectral_centroid is not None:
+            sc_idx = idx[idx < len(spectral_centroid)]
+            if len(sc_idx) > 0:
+                stat["mean_centroid"] = float(np.mean(spectral_centroid[sc_idx]))
+                if len(sc_idx) >= 3:
+                    t = max(1, len(sc_idx) // 3)
+                    stat["centroid_slope"] = float(
+                        np.mean(spectral_centroid[sc_idx[-t:]]) - np.mean(spectral_centroid[sc_idx[:t]])
+                    )
+                else:
+                    stat["centroid_slope"] = 0.0
+            else:
+                stat["mean_centroid"] = 0.0
+                stat["centroid_slope"] = 0.0
+
+        # Multi-dimensional: transient density
+        if transient_density is not None:
+            td_idx = idx[idx < len(transient_density)]
+            if len(td_idx) > 0:
+                stat["mean_transient_density"] = float(np.mean(transient_density[td_idx]))
+            else:
+                stat["mean_transient_density"] = 0.0
+
+        stats.append(stat)
+
     # Compute global stats for z-score normalization
     all_mean_rms = np.array([s["mean_rms"] for s in stats])
     global_mean = float(all_mean_rms.mean())
     global_std = float(all_mean_rms.std() or 1e-6)
-    
+
     for s in stats:
         s["energy_z"] = (s["mean_rms"] - global_mean) / global_std
-    
+
+    # Normalize centroid z-scores if available
+    if spectral_centroid is not None:
+        all_centroid = np.array([s.get("mean_centroid", 0.0) for s in stats])
+        c_mean = float(all_centroid.mean())
+        c_std = float(all_centroid.std() or 1e-6)
+        for s in stats:
+            s["centroid_z"] = (s.get("mean_centroid", 0.0) - c_mean) / c_std
+
     return stats
 
 
@@ -376,7 +418,7 @@ def assign_region_labels(regions: List[Region], stats: List[Dict]) -> None:
         regions[i].name = "Drop"
         regions[i].type = "high_energy"
 
-    # 4. Label remaining middle sections
+    # 4. Label remaining middle sections using multi-dimensional signals
     verse_counter = 1
     for i in range(1, len(regions) - 1):
         if i in chorus_indices or i in drop_indices:
@@ -387,13 +429,16 @@ def assign_region_labels(regions: List[Region], stats: List[Dict]) -> None:
         energy_slope = s["energy_slope"]
         relative_pos = s["relative_pos"]
         duration = s["duration"]
+        centroid_slope = s.get("centroid_slope", 0.0)
+        mean_transient = s.get("mean_transient_density", 0.5)
 
-        if energy_slope > 0.001 and energy_z >= -0.5:
-            # Rising energy: Build
+        # Multi-dimensional: gradual rise in energy + brightness → Build
+        is_rising = energy_slope > 0.001 or centroid_slope > 0.0
+        if is_rising and energy_z >= -0.5:
             regions[i].name = "Build"
             regions[i].type = "build"
-        elif energy_z < -0.3 and energy_slope < 0:
-            # Low energy, falling: Breakdown
+        # Multi-dimensional: low energy + low transient density → Breakdown
+        elif energy_z < -0.3 and (energy_slope < 0 or mean_transient < 0.3):
             regions[i].name = "Breakdown"
             regions[i].type = "low_energy"
         elif energy_z > 0 and duration < 15.0:
@@ -522,11 +567,19 @@ def detect_regions(bundle: ReferenceBundle) -> List[Region]:
     # Step 10: Compute RMS and time arrays for energy analysis
     rms = compute_rms_envelope(audio_mono, frame_length=2048, hop_length=hop_length)
     times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop_length)
-    
-    # Step 11: Compute region statistics
-    region_stats = compute_region_stats(regions, rms, times, duration)
-    
-    # Step 12: Assign labels
+
+    # Step 10b: Compute multi-dimensional features for improved labeling
+    sc = compute_spectral_centroid(audio_mono, sr, hop_length=hop_length)
+    td = compute_transient_density(audio_mono, sr, hop_length=hop_length)
+
+    # Step 11: Compute region statistics with multi-dimensional features
+    region_stats = compute_region_stats(
+        regions, rms, times, duration,
+        spectral_centroid=sc,
+        transient_density=td,
+    )
+
+    # Step 12: Assign labels using multi-dimensional signals
     assign_region_labels(regions, region_stats)
     
     # Step 13: Re-assign IDs and set label fields after merging

@@ -458,6 +458,7 @@ async def get_motifs(
             "duration": inst.duration,
             "groupId": inst.group_id,
             "isVariation": inst.is_variation,
+            "similarityType": inst.similarity_type,
             "regionIds": inst.region_ids
         })
     
