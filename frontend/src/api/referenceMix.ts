@@ -66,6 +66,16 @@ export interface TransitionMarker {
 }
 
 /**
+ * Multi-dimensional energy curves (per bar, normalized 0-1).
+ */
+export interface MultiEnergyCurves {
+  lufs: number[];
+  spectralCentroid: number[];
+  bassEnergy: number[];
+  transientDensity: number[];
+}
+
+/**
  * Energy curve response.
  */
 export interface EnergyCurveResponse {
@@ -77,6 +87,7 @@ export interface EnergyCurveResponse {
     meanEnergy: number;
   }>;
   transitionMarkers: TransitionMarker[];
+  multiCurves?: MultiEnergyCurves;
 }
 
 /**

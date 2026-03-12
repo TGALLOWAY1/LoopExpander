@@ -88,19 +88,23 @@ const DEMO_ROLE_TIMELINES: RoleActivityTimeline[] = [
   ]},
 ];
 
+// Helper to generate demo energy values per section
+function demoEnergy(length: number, ranges: Array<[number, number, number, number]>) {
+  return Array.from({ length }, (_, i) => {
+    for (const [start, end, base, variance] of ranges) {
+      if (i >= start && i < end) return base + Math.random() * variance;
+    }
+    return 0.1;
+  });
+}
+
 const DEMO_ENERGY: EnergyCurveResponse = {
   referenceId: 'demo',
-  barEnergies: Array.from({ length: 112 }, (_, i) => {
-    // Simulate energy curve: low intro, medium verse, high chorus, low bridge, high drop, low outro
-    if (i < 8) return 0.2 + Math.random() * 0.1;
-    if (i < 24) return 0.4 + Math.random() * 0.15;
-    if (i < 40) return 0.7 + Math.random() * 0.15;
-    if (i < 56) return 0.45 + Math.random() * 0.1;
-    if (i < 72) return 0.75 + Math.random() * 0.1;
-    if (i < 80) return 0.25 + Math.random() * 0.1;
-    if (i < 96) return 0.85 + Math.random() * 0.1;
-    return 0.15 + Math.random() * 0.1;
-  }),
+  barEnergies: demoEnergy(112, [
+    [0, 8, 0.2, 0.1], [8, 24, 0.4, 0.15], [24, 40, 0.7, 0.15],
+    [40, 56, 0.45, 0.1], [56, 72, 0.75, 0.1], [72, 80, 0.25, 0.1],
+    [80, 96, 0.85, 0.1], [96, 112, 0.15, 0.1],
+  ]),
   sectionDensities: [],
   transitionMarkers: [
     { bar: 8, timeSeconds: 14.77, energyDelta: 0.3, type: 'lift' },
@@ -110,6 +114,28 @@ const DEMO_ENERGY: EnergyCurveResponse = {
     { bar: 80, timeSeconds: 147.69, energyDelta: 0.6, type: 'lift' },
     { bar: 96, timeSeconds: 177.23, energyDelta: -0.7, type: 'drop' },
   ],
+  multiCurves: {
+    lufs: demoEnergy(112, [
+      [0, 8, 0.2, 0.1], [8, 24, 0.4, 0.15], [24, 40, 0.7, 0.15],
+      [40, 56, 0.45, 0.1], [56, 72, 0.75, 0.1], [72, 80, 0.25, 0.1],
+      [80, 96, 0.85, 0.1], [96, 112, 0.15, 0.1],
+    ]),
+    spectralCentroid: demoEnergy(112, [
+      [0, 8, 0.3, 0.1], [8, 24, 0.5, 0.1], [24, 40, 0.65, 0.15],
+      [40, 56, 0.45, 0.1], [56, 72, 0.7, 0.1], [72, 80, 0.35, 0.1],
+      [80, 96, 0.8, 0.15], [96, 112, 0.2, 0.1],
+    ]),
+    bassEnergy: demoEnergy(112, [
+      [0, 8, 0.1, 0.05], [8, 24, 0.35, 0.1], [24, 40, 0.6, 0.15],
+      [40, 56, 0.3, 0.1], [56, 72, 0.65, 0.1], [72, 80, 0.15, 0.05],
+      [80, 96, 0.9, 0.1], [96, 112, 0.1, 0.05],
+    ]),
+    transientDensity: demoEnergy(112, [
+      [0, 8, 0.15, 0.1], [8, 24, 0.55, 0.15], [24, 40, 0.7, 0.1],
+      [40, 56, 0.5, 0.1], [56, 72, 0.65, 0.1], [72, 80, 0.2, 0.1],
+      [80, 96, 0.85, 0.1], [96, 112, 0.1, 0.05],
+    ]),
+  },
 };
 
 const BAR_WIDTH = 24;
