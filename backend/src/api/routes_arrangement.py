@@ -20,6 +20,7 @@ from models.store import (
 )
 from arrangement.mapping_engine import generate_arrangement
 from arrangement.models import Arrangement, ArrangementBlock
+from arrangement.presets import get_preset, list_presets
 from arrangement.variation_engine import (
     generate_variation_suggestions,
     apply_suggestion as apply_variation_suggestion,
@@ -43,6 +44,7 @@ router = APIRouter(prefix="/project", tags=["arrangement"])
 class GenerateArrangementRequest(BaseModel):
     """Optional parameters for arrangement generation."""
     includeInactive: bool = False  # Include inactive role ranges as muted blocks
+    presetId: Optional[str] = None  # Genre preset ID (e.g., "future_bass", "dubstep")
 
 
 @router.post("/{project_id}/arrange")
@@ -72,12 +74,22 @@ async def generate_arrangement_endpoint(
             detail=f"Reference mix {project_id} not found. Upload and analyze a reference first.",
         )
 
-    # Validate regions exist
+    # Resolve preset if provided
+    preset = None
+    if request and request.presetId:
+        preset = get_preset(request.presetId)
+        if not preset:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown preset ID: {request.presetId}",
+            )
+
+    # Validate regions exist (not required when using a preset)
     regions = REFERENCE_REGIONS.get(project_id, [])
-    if not regions:
+    if not regions and not preset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No regions found. Run analyze-mix first.",
+            detail="No regions found. Run analyze-mix first or select a genre preset.",
         )
 
     # Validate user loops exist
@@ -95,6 +107,7 @@ async def generate_arrangement_endpoint(
 
     logger.info(
         f"Generating arrangement for {project_id}: "
+        f"preset={preset.id if preset else 'none'}, "
         f"{len(regions)} regions, {len(loop_bundle.stems)} stems, "
         f"{len(role_timelines)} role timelines, "
         f"{len(interaction_labels)} interaction labels"
@@ -109,6 +122,7 @@ async def generate_arrangement_endpoint(
             user_loops=loop_bundle,
             energy_curve=energy_curve,
             bpm=mix.bpm,
+            preset=preset,
         )
 
         ARRANGEMENTS[project_id] = arrangement
@@ -131,6 +145,12 @@ async def generate_arrangement_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Arrangement generation failed: {str(e)}",
         )
+
+
+@router.get("/presets")
+async def get_presets():
+    """List all available genre presets for arrangement generation."""
+    return [p.to_dict() for p in list_presets()]
 
 
 @router.get("/{project_id}/arrangement")

@@ -10,8 +10,10 @@ import { useProject } from '../context/ProjectContext';
 import {
   Arrangement,
   ArrangementBlock,
+  ArrangementPreset,
   generateArrangement,
   getArrangement,
+  getPresets,
   updateArrangementBlock,
   deleteArrangementBlock,
 } from '../api/arrangement';
@@ -59,6 +61,8 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [suggestionKey, setSuggestionKey] = useState(0);
   const [showExport, setShowExport] = useState(false);
+  const [presets, setPresets] = useState<ArrangementPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
 
   // Drag-resize state
   const [resizing, setResizing] = useState<{
@@ -94,12 +98,19 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
     return () => { cancelled = true; };
   }, [referenceId]);
 
+  // Fetch available presets on mount
+  useEffect(() => {
+    getPresets()
+      .then(setPresets)
+      .catch(() => setPresets([]));
+  }, []);
+
   const handleGenerate = useCallback(async () => {
     if (!referenceId) return;
     setGenerating(true);
     setError(null);
     try {
-      const data = await generateArrangement(referenceId);
+      const data = await generateArrangement(referenceId, selectedPresetId ?? undefined);
       setArrangement(data);
       setSuggestionKey((k) => k + 1); // Refresh suggestions panel
     } catch (err: any) {
@@ -107,7 +118,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
     } finally {
       setGenerating(false);
     }
-  }, [referenceId]);
+  }, [referenceId, selectedPresetId]);
 
   const handleSuggestionApplied = useCallback((updatedArrangement: Arrangement) => {
     setArrangement(updatedArrangement);
@@ -311,6 +322,20 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
                 Export
               </button>
             </>
+          )}
+          {presets.length > 0 && (
+            <select
+              className="arr-preset-selector"
+              value={selectedPresetId ?? ''}
+              onChange={(e) => setSelectedPresetId(e.target.value || null)}
+            >
+              <option value="">From Reference</option>
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           )}
           <button
             className="arr-generate-btn"
