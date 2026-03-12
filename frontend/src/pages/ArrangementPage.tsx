@@ -63,6 +63,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
   const [showExport, setShowExport] = useState(false);
   const [presets, setPresets] = useState<ArrangementPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [autoPlayAudition, setAutoPlayAudition] = useState(false);
 
   // Drag-resize state
   const [resizing, setResizing] = useState<{
@@ -113,6 +114,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
       const data = await generateArrangement(referenceId, selectedPresetId ?? undefined);
       setArrangement(data);
       setSuggestionKey((k) => k + 1); // Refresh suggestions panel
+      setAutoPlayAudition(true); // Auto-scroll to player after generation
     } catch (err: any) {
       setError(err.message || 'Failed to generate arrangement');
     } finally {
@@ -309,6 +311,15 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
         <div className="arr-header-right">
           {arrangement && (
             <>
+              <button
+                className="arr-play-all-btn"
+                onClick={() => {
+                  setAutoPlayAudition(true);
+                  setSuggestionKey((k) => k + 1);
+                }}
+              >
+                Play Arrangement
+              </button>
               <button
                 className={`arr-toggle-btn ${showSuggestions ? 'active' : ''}`}
                 onClick={() => setShowSuggestions((v) => !v)}
@@ -570,6 +581,7 @@ export default function ArrangementPage({ onBack }: ArrangementPageProps): JSX.E
             projectId={referenceId}
             sections={arrangement.sections}
             roles={roles}
+            autoPlay={autoPlayAudition}
           />
         )}
         </>
