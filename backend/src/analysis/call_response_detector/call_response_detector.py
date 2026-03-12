@@ -448,11 +448,11 @@ def detect_call_response(
     max_offset_seconds = bars_to_seconds(config.max_offset_bars, bpm)
     
     all_pairs = []
-    
-    # For each stem, detect call/response within that stem only
+
+    # Intra-stem: detect call/response within each stem
     for stem_role, stem_motifs in by_stem.items():
         logger.info(f"[CallResponse] Processing {stem_role} stem with {len(stem_motifs)} motifs")
-        
+
         stem_pairs = _detect_call_response_within_stem(
             stem_motifs,
             regions,
@@ -462,15 +462,54 @@ def detect_call_response(
             config,
             stem_role
         )
-        
+
         logger.info(
-            f"[CallResponse] Found {len(stem_pairs)} pairs in {stem_role} stem",
+            f"[CallResponse] Found {len(stem_pairs)} intra-stem pairs in {stem_role}",
             extra={"stem_role": stem_role, "pair_count": len(stem_pairs)}
         )
-        
+
         all_pairs.extend(stem_pairs)
-    
-    logger.info(f"[CallResponse] Found {len(all_pairs)} potential call-response pairs across all stems")
+
+    # Inter-stem: detect call/response between different stems
+    stem_roles = list(by_stem.keys())
+    inter_pair_counter = 0
+    for i, stem_a in enumerate(stem_roles):
+        for stem_b in stem_roles[i + 1:]:
+            motifs_a = by_stem[stem_a]
+            motifs_b = by_stem[stem_b]
+            for call_motif in motifs_a:
+                responses = _find_potential_responses(
+                    call_motif, motifs_b,
+                    min_offset_seconds, max_offset_seconds, bpm
+                )
+                for response_motif, offset_seconds in responses:
+                    similarity = _compute_similarity(call_motif.features, response_motif.features)
+                    if similarity < config.min_similarity:
+                        continue
+                    offset_bars = (offset_seconds / 60.0) * bpm / 4.0
+                    confidence = _compute_confidence(similarity, offset_bars, config)
+                    if confidence < config.min_confidence:
+                        continue
+                    pair_id = f"call_response_inter_{stem_a}_{stem_b}_{inter_pair_counter:04d}"
+                    pair = CallResponsePair(
+                        id=pair_id,
+                        from_motif_id=call_motif.id,
+                        to_motif_id=response_motif.id,
+                        from_stem_role=stem_a,
+                        to_stem_role=stem_b,
+                        from_time=call_motif.start_time,
+                        to_time=response_motif.start_time,
+                        time_offset=offset_seconds,
+                        confidence=confidence,
+                    )
+                    pair.region_id = _find_region_for_pair(pair, regions)
+                    all_pairs.append(pair)
+                    inter_pair_counter += 1
+
+    logger.info(
+        f"[CallResponse] Found {len(all_pairs)} total pairs "
+        f"({inter_pair_counter} inter-stem)"
+    )
     
     # Deduplicate
     all_pairs = _deduplicate_pairs(all_pairs)
