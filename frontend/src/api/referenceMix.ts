@@ -93,6 +93,26 @@ export interface EnergyCurveResponse {
 /**
  * Mix region with bar positions and labels.
  */
+/**
+ * Tonal balance for a single region (normalized to sum=1).
+ */
+export interface RegionTonalBalance {
+  regionId: string;
+  low: number;
+  lowMid: number;
+  mid: number;
+  highMid: number;
+  high: number;
+}
+
+/**
+ * Tonal balance response.
+ */
+export interface TonalBalanceResponse {
+  referenceId: string;
+  tonalBalance: RegionTonalBalance[];
+}
+
 export interface MixRegion {
   id: string;
   name: string;
@@ -213,6 +233,25 @@ export async function getMixRegions(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch regions' }));
+    throw new Error(error.detail || `Failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch tonal balance per region.
+ */
+export async function getTonalBalance(
+  referenceId: string,
+): Promise<TonalBalanceResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reference/${referenceId}/tonal-balance`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch tonal balance' }));
     throw new Error(error.detail || `Failed with status ${response.status}`);
   }
 

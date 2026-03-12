@@ -12,6 +12,7 @@ from models.store import (
     REFERENCE_REGIONS,
     REFERENCE_ROLE_ACTIVITY,
     REFERENCE_ENERGY_CURVES,
+    REFERENCE_TONAL_BALANCE,
     INTERACTION_LABELS,
 )
 from models.interaction_label import InteractionLabel, duplicate_labels_to_section
@@ -19,6 +20,7 @@ from models.reference_mix import ReferenceMix
 from stem_ingest.ingest_service import load_reference_mix
 from analysis.role_activity.role_detector import detect_role_activity
 from analysis.energy.energy_curve import compute_energy_curve
+from analysis.energy.tonal_balance import compute_tonal_balance
 from analysis.region_detector.region_detector import detect_regions
 from models.reference_bundle import ReferenceBundle
 from stem_ingest.audio_file import AudioFile
@@ -154,6 +156,16 @@ async def analyze_reference_mix(reference_id: str):
             f"{len(energy_result.transition_markers)} transitions"
         )
 
+        # 4. Tonal balance per region
+        logger.info("Computing tonal balance...")
+        tonal_balance = compute_tonal_balance(
+            audio=audio.samples,
+            sr=audio.sr,
+            regions=regions,
+        )
+        REFERENCE_TONAL_BALANCE[reference_id] = [tb.to_dict() for tb in tonal_balance]
+        logger.info(f"Tonal balance computed for {len(tonal_balance)} regions")
+
         return {
             "referenceId": reference_id,
             "regionCount": len(regions),
@@ -220,6 +232,32 @@ async def get_energy_curve(reference_id: str):
     return {
         "referenceId": reference_id,
         **energy_data,
+    }
+
+
+@router.get("/{reference_id}/tonal-balance")
+async def get_tonal_balance(reference_id: str):
+    """Get 5-band tonal balance per region for a reference mix.
+
+    Returns:
+        JSON with per-region tonal balance (low, lowMid, mid, highMid, high).
+    """
+    if reference_id not in REFERENCE_MIXES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reference mix {reference_id} not found",
+        )
+
+    tonal_data = REFERENCE_TONAL_BALANCE.get(reference_id)
+    if not tonal_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tonal balance not yet computed for {reference_id}. Run analyze-mix first.",
+        )
+
+    return {
+        "referenceId": reference_id,
+        "tonalBalance": tonal_data,
     }
 
 

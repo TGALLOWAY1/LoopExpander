@@ -543,3 +543,78 @@
   margin: 0;
   font-size: 0.9rem;
 }
+
+/* ===== Tonal Balance Display ===== */
+.sc-tonal-balance {
+  padding: 12px;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.sc-tonal-balance-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sc-tonal-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sc-tonal-band-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-tonal-band-label {
+  width: 72px;
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sc-tonal-band-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.sc-tonal-band-range {
+  font-size: 0.6rem;
+  color: #999;
+}
+
+.sc-tonal-band-bar-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sc-tonal-band-bar {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 2px;
+  opacity: 0.8;
+  transition: width 0.3s ease;
+}
+
+.sc-tonal-band-value {
+  font-size: 0.65rem;
+  color: #666;
+  min-width: 28px;
+  text-align: right;
+  position: absolute;
+  right: 4px;
+}
