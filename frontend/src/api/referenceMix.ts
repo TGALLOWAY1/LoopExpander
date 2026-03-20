@@ -37,6 +37,8 @@ export interface ActivitySegment {
   endBar: number;
   active: boolean;
   confidence: number;
+  label?: string | null;
+  color?: string | null;
 }
 
 /**

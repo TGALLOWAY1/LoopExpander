@@ -4,7 +4,7 @@
  * Displays all sections simultaneously on a horizontal bar-based timeline,
  * with role activity lanes, energy overlay, and section editing tools.
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProject } from '../context/ProjectContext';
 import {
   CanvasSection,
@@ -16,23 +16,24 @@ import {
 } from '../api/structureCanvas';
 import {
   RoleActivityTimeline,
+  ActivitySegment,
   EnergyCurveResponse,
 } from '../api/referenceMix';
 import {
   InteractionLabel,
   InteractionLabelCreate,
   InteractionLabelType,
+  INTERACTION_LABEL_TYPES,
   getInteractionLabels,
   createInteractionLabels,
-  updateInteractionLabel,
   deleteInteractionLabel,
-  duplicatePattern,
+  updateInteractionLabel,
 } from '../api/interactions';
 import { SectionTimeline } from '../components/structureCanvas/SectionTimeline';
 import { SectionEditor } from '../components/structureCanvas/SectionEditor';
 import { EnergyOverlay } from '../components/structureCanvas/EnergyOverlay';
 import { RoleActivityLanes } from '../components/structureCanvas/RoleActivityLanes';
-import { InteractionLabeler } from '../components/structureCanvas/InteractionLabeler';
+import { ComposerWaveform } from '../components/visualComposer/ComposerWaveform';
 import '../components/structureCanvas/StructureCanvas.css';
 import './StructureCanvasPage.css';
 
@@ -138,7 +139,7 @@ const DEMO_ENERGY: EnergyCurveResponse = {
   },
 };
 
-const BAR_WIDTH = 24;
+const BASE_BAR_WIDTH = 24;
 
 type ViewMode = 'song' | 'section';
 
@@ -154,18 +155,55 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interactionLabels, setInteractionLabels] = useState<InteractionLabel[]>([]);
+  const [activeLabelType, setActiveLabelType] = useState<InteractionLabelType>('call');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // View mode state: song overview vs section detail
   const [viewMode, setViewMode] = useState<ViewMode>('song');
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
 
-  // Interaction label state
-  const [interactionLabels, setInteractionLabels] = useState<InteractionLabel[]>([]);
-  const [activeLabelType, setActiveLabelType] = useState<InteractionLabelType>('A');
+
+
+  const [containerWidth, setContainerWidth] = useState(1000);
+  useEffect(() => {
+    const updateWidth = () => {
+      if (scrollRef.current) {
+        setContainerWidth(scrollRef.current.clientWidth);
+      }
+    };
+    // use setTimeout to ensure ref is mounted and layout is complete before measuring
+    const timer = setTimeout(updateWidth, 50);
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, []);
+
+  // Compute section-filtered data for Section View
+  const focusedSection = sections.find((s) => s.id === focusedSectionId) ?? null;
+
+  const barWidth = React.useMemo(() => {
+    if (viewMode === 'song' || !focusedSection) return BASE_BAR_WIDTH;
+    const sectionBars = focusedSection.endBar - focusedSection.startBar;
+    if (sectionBars <= 0) return BASE_BAR_WIDTH;
+    // Aim to fit the section into 80% of the container width to leave context around it
+    return Math.max(BASE_BAR_WIDTH, Math.floor((containerWidth * 0.8) / sectionBars));
+  }, [viewMode, focusedSection, containerWidth]);
+
+  // Handle auto-scrolling when focusing a section
+  useEffect(() => {
+    if (viewMode === 'section' && focusedSection && scrollRef.current) {
+      // Put the start of the section 10% from the left edge
+      const targetScroll = (focusedSection.startBar * barWidth) - (containerWidth * 0.1);
+      scrollRef.current.scrollTo({ left: Math.max(0, targetScroll), behavior: 'smooth' });
+    }
+  }, [viewMode, focusedSectionId, barWidth, containerWidth]);
 
   // Handle clicking a section in Song View to enter Section View
-  const handleSectionClick = useCallback((sectionId: string) => {
+  const handleSectionClick = useCallback((sectionId: string | null) => {
+    if (!sectionId) return;
     if (viewMode === 'song') {
       setFocusedSectionId(sectionId);
       setSelectedSectionId(sectionId);
@@ -182,12 +220,6 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
     setSelectedSectionId(null);
   }, []);
 
-  // Compute section-filtered data for Section View
-  const focusedSection = sections.find((s) => s.id === focusedSectionId) ?? null;
-  const sectionViewBars = focusedSection
-    ? Math.ceil(focusedSection.endBar - focusedSection.startBar)
-    : totalBars;
-  const sectionViewBarOffset = focusedSection ? Math.floor(focusedSection.startBar) : 0;
 
   // Load data from API or use demo data
   useEffect(() => {
@@ -207,13 +239,13 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
       loadStructureCanvasData(referenceId),
       getInteractionLabels(referenceId).catch(() => ({ labels: [] })),
     ])
-      .then(([data, labelsRes]: [StructureCanvasData, { labels: InteractionLabel[] }]) => {
+      .then(([data, labelsData]) => {
         if (cancelled) return;
-        setSections(data.sections);
-        setRoleTimelines(data.roleTimelines);
-        setEnergyCurve(data.energyCurve);
-        setTotalBars(data.totalBars);
-        setInteractionLabels(labelsRes.labels || []);
+        setSections((data as StructureCanvasData).sections);
+        setRoleTimelines((data as StructureCanvasData).roleTimelines);
+        setEnergyCurve((data as StructureCanvasData).energyCurve);
+        setTotalBars((data as StructureCanvasData).totalBars);
+        setInteractionLabels(labelsData.labels);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -291,7 +323,7 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
 
       if (!referenceId) return;
       try {
-        const updatedRegions = await splitRegion(referenceId, sectionId, splitBar);
+        await splitRegion(referenceId, sectionId, splitBar);
         // Reload full data after structural change
         const data = await loadStructureCanvasData(referenceId);
         setSections(data.sections);
@@ -338,57 +370,63 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
         console.error('Failed to merge sections:', err);
       }
     },
-    [demoMode, referenceId, sections],
+    [setSections, demoMode, referenceId, sections],
   );
 
-  const handleRoleToggle = useCallback(
-    (role: string, startBar: number, endBar: number, active: boolean) => {
-      setRoleTimelines((prev) =>
-        prev.map((timeline) => {
-          if (timeline.role !== role) return timeline;
-          return {
-            ...timeline,
-            segments: timeline.segments.map((seg) => {
-              if (seg.startBar === startBar && seg.endBar === endBar) {
-                return { ...seg, active };
-              }
-              return seg;
-            }),
-          };
-        }),
-      );
-    },
-    [],
-  );
-
-  // Interaction label handlers
   const handleCreateLabel = useCallback(
-    async (labelCreate: InteractionLabelCreate) => {
-      // Optimistic local add
-      const tempLabel: InteractionLabel = {
-        id: `temp-${Date.now()}`,
-        ...labelCreate,
-        color: labelCreate.color || null,
-        notes: labelCreate.notes || null,
-      };
-      setInteractionLabels((prev) => [...prev, tempLabel]);
+    async (labelData: InteractionLabelCreate) => {
+      // Optimistic update
+      const tempId = `temp-${Date.now()}`;
+      setInteractionLabels((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          sectionId: labelData.sectionId,
+          startBar: labelData.startBar,
+          endBar: labelData.endBar,
+          label: labelData.label,
+          role: labelData.role,
+          color: labelData.color || null,
+          notes: labelData.notes || null,
+        },
+      ]);
 
       if (!demoMode && referenceId) {
         try {
-          const res = await createInteractionLabels(referenceId, [labelCreate]);
-          setInteractionLabels(res.labels);
+          await createInteractionLabels(referenceId, [labelData]);
+          // Re-fetch all to ensure sync
+          const newData = await getInteractionLabels(referenceId);
+          setInteractionLabels(newData.labels);
         } catch (err) {
           console.error('Failed to create label:', err);
+          // Rollback
+          setInteractionLabels((prev) => prev.filter((l) => l.id !== tempId));
         }
       }
     },
-    [demoMode, referenceId],
+    [demoMode, referenceId]
+  );
+
+  const handleUpdateLabel = useCallback(
+    async (labelId: string, updates: Partial<InteractionLabel>) => {
+      // Optimistic upate
+      setInteractionLabels((prev) =>
+        prev.map((l) => (l.id === labelId ? { ...l, ...updates } : l))
+      );
+      if (!demoMode && referenceId && !labelId.startsWith('temp-')) {
+        try {
+          await updateInteractionLabel(referenceId, labelId, updates);
+        } catch (err) {
+          console.error('Failed to update label:', err);
+        }
+      }
+    },
+    [demoMode, referenceId]
   );
 
   const handleDeleteLabel = useCallback(
     async (labelId: string) => {
       setInteractionLabels((prev) => prev.filter((l) => l.id !== labelId));
-
       if (!demoMode && referenceId && !labelId.startsWith('temp-')) {
         try {
           await deleteInteractionLabel(referenceId, labelId);
@@ -397,59 +435,41 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
         }
       }
     },
-    [demoMode, referenceId],
+    [demoMode, referenceId]
   );
 
-  const handleUpdateLabel = useCallback(
-    async (labelId: string, updates: Partial<InteractionLabel>) => {
-      setInteractionLabels((prev) =>
-        prev.map((l) => (l.id === labelId ? { ...l, ...updates } : l)),
+  const handleRoleSegmentUpdate = useCallback(
+    (role: string, index: number, patch: Partial<ActivitySegment>) => {
+      setRoleTimelines((prev) =>
+        prev.map((timeline) => {
+          if (timeline.role !== role) return timeline;
+          const newSegments = [...timeline.segments];
+          newSegments[index] = { ...newSegments[index], ...patch };
+          return { ...timeline, segments: newSegments };
+        }),
       );
-
-      if (!demoMode && referenceId && !labelId.startsWith('temp-')) {
-        try {
-          await updateInteractionLabel(referenceId, labelId, { id: labelId, ...updates });
-        } catch (err) {
-          console.error('Failed to update label:', err);
-        }
-      }
     },
-    [demoMode, referenceId],
+    [],
   );
 
-  const handleDuplicatePattern = useCallback(
-    async (sourceSectionId: string, targetSectionId: string) => {
-      if (!demoMode && referenceId) {
-        try {
-          const res = await duplicatePattern(referenceId, sourceSectionId, targetSectionId);
-          setInteractionLabels(res.labels);
-        } catch (err) {
-          console.error('Failed to duplicate pattern:', err);
-        }
-      } else {
-        // Demo mode: locally duplicate
-        const sourceLabels = interactionLabels.filter((l) => l.sectionId === sourceSectionId);
-        const sourceSection = sections.find((s) => s.id === sourceSectionId);
-        const targetSection = sections.find((s) => s.id === targetSectionId);
-        if (!sourceSection || !targetSection || sourceLabels.length === 0) return;
-
-        const newLabels = sourceLabels.map((lbl) => {
-          const offset = lbl.startBar - sourceSection.startBar;
-          return {
-            ...lbl,
-            id: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            sectionId: targetSectionId,
-            startBar: targetSection.startBar + offset,
-            endBar: Math.min(
-              targetSection.startBar + (lbl.endBar - sourceSection.startBar),
-              targetSection.endBar,
-            ),
-          };
-        });
-        setInteractionLabels((prev) => [...prev, ...newLabels]);
-      }
+  const handleRoleSegmentSplit = useCallback(
+    (role: string, index: number, splitBar: number) => {
+      setRoleTimelines((prev) =>
+        prev.map((timeline) => {
+          if (timeline.role !== role) return timeline;
+          const newSegments = [...timeline.segments];
+          const segToSplit = newSegments[index];
+          if (splitBar <= segToSplit.startBar || splitBar >= segToSplit.endBar) return timeline;
+          
+          const leftSeg = { ...segToSplit, endBar: splitBar };
+          const rightSeg = { ...segToSplit, startBar: splitBar };
+          newSegments.splice(index, 1, leftSeg, rightSeg);
+          
+          return { ...timeline, segments: newSegments };
+        }),
+      );
     },
-    [demoMode, referenceId, interactionLabels, sections],
+    [],
   );
 
   if (loading) {
@@ -475,6 +495,20 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
       </div>
     );
   }
+
+  const filteredTimelines = useMemo(() => {
+    if (!focusedSection) return [];
+    return roleTimelines.map(timeline => ({
+      ...timeline,
+      segments: timeline.segments.filter(
+        s => s.startBar < focusedSection.endBar && s.endBar > focusedSection.startBar
+      ).map(s => ({
+        ...s,
+        startBar: Math.max(s.startBar, focusedSection.startBar),
+        endBar: Math.min(s.endBar, focusedSection.endBar),
+      }))
+    }));
+  }, [roleTimelines, focusedSection]);
 
   return (
     <div className="structure-canvas-page">
@@ -526,9 +560,18 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
           <SectionTimeline
             sections={sections}
             totalBars={totalBars}
-            barWidth={BAR_WIDTH}
+            barWidth={barWidth}
             selectedSectionId={viewMode === 'song' ? focusedSectionId : selectedSectionId}
             onSelectSection={handleSectionClick}
+          />
+
+          {/* Actual Audio Waveform Component placed between segments and energy */}
+          <ComposerWaveform
+            audioUrl="/demo.wav"
+            pixelsPerBar={barWidth}
+            totalBars={totalBars}
+            height={64}
+            bpm={130}
           />
 
           {/* Energy overlay — always visible */}
@@ -536,37 +579,51 @@ const StructureCanvasPage: React.FC<StructureCanvasPageProps> = ({
             <EnergyOverlay
               energyCurve={energyCurve}
               totalBars={totalBars}
-              barWidth={BAR_WIDTH}
+              barWidth={barWidth}
             />
           )}
 
           {/* Section View: detailed layers (role lanes, interactions) */}
           {viewMode === 'section' && (
-            <>
-              {/* Role activity lanes */}
-              {roleTimelines.length > 0 && (
-                <RoleActivityLanes
-                  timelines={roleTimelines}
-                  totalBars={totalBars}
-                  barWidth={BAR_WIDTH}
-                  onToggleSegment={handleRoleToggle}
-                />
-              )}
-
-              {/* Interaction labeler */}
-              <InteractionLabeler
-                labels={interactionLabels}
-                sections={sections}
+            <div className="sc-module" style={{ flexShrink: 0, paddingLeft: 0, paddingRight: 0 }}>
+              <div style={{ padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 className="sc-module-title" style={{ margin: 0 }}>Role Activity & Interactions</h3>
+                <div className="sc-interaction-type-selector" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#666', marginRight: '4px' }}>Active Label:</span>
+                  {INTERACTION_LABEL_TYPES.map((type) => (
+                    <button
+                      key={type}
+                      className={`sc-label-type-btn ${activeLabelType === type ? 'active' : ''}`}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.75rem',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        border: '1px solid',
+                        borderColor: activeLabelType === type ? '#1976d2' : '#ddd',
+                        background: activeLabelType === type ? '#1976d2' : '#fff',
+                        color: activeLabelType === type ? '#fff' : '#555',
+                        boxShadow: activeLabelType === type ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+                      }}
+                      onClick={() => setActiveLabelType(type as InteractionLabelType)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <RoleActivityLanes
+                timelines={filteredTimelines}
                 totalBars={totalBars}
-                barWidth={BAR_WIDTH}
+                barWidth={barWidth}
+                onUpdateSegment={handleRoleSegmentUpdate}
+                interactionLabels={interactionLabels}
                 activeLabelType={activeLabelType}
-                onLabelTypeChange={setActiveLabelType}
                 onCreateLabel={handleCreateLabel}
-                onDeleteLabel={handleDeleteLabel}
                 onUpdateLabel={handleUpdateLabel}
-                onDuplicatePattern={handleDuplicatePattern}
+                onDeleteLabel={handleDeleteLabel}
               />
-            </>
+            </div>
           )}
 
           {/* Song View: hint to click a section */}

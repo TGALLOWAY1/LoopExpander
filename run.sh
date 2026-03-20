@@ -84,7 +84,7 @@ echo ""
 print_info "Starting backend server on http://localhost:8000"
 # Set PYTHONPATH to include backend/src so imports work correctly
 export PYTHONPATH="${SCRIPT_DIR}/backend/src:${PYTHONPATH}"
-uvicorn backend.src.main:app --reload --port 8000 > /tmp/backend.log 2>&1 &
+/opt/homebrew/bin/python3.11 -m uvicorn backend.src.main:app --reload --port 8000 > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 
 # Start frontend server

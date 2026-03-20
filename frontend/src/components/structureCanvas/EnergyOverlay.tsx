@@ -67,9 +67,8 @@ export const EnergyOverlay: React.FC<EnergyOverlayProps> = ({
   barWidth,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [visibleLayers, setVisibleLayers] = useState<Set<string>>(
-    new Set(['loudness'])
-  );
+  const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(['loudness']));
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const height = 80;
   const width = totalBars * barWidth;
 
@@ -146,37 +145,38 @@ export const EnergyOverlay: React.FC<EnergyOverlayProps> = ({
     <div className="sc-energy-overlay-row">
       <div
         className="sc-lane-label"
-        style={{ flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}
       >
         Energy
-        <div className="sc-energy-toggle-group">
-          {CURVE_LAYERS.map((layer) => {
-            // Only show multi-curve toggles if data exists
-            if (layer.id !== 'loudness' && !hasMultiCurves) return null;
-            const active = visibleLayers.has(layer.id);
-            return (
-              <button
-                key={layer.id}
-                className={`sc-energy-toggle ${active ? 'active' : ''}`}
-                style={
-                  active
-                    ? { background: `rgb(${layer.color})`, borderColor: `rgb(${layer.color})` }
-                    : undefined
-                }
-                onClick={() => toggleLayer(layer.id)}
-                title={`Toggle ${layer.label} curve`}
-              >
-                {layer.label}
-              </button>
-            );
-          })}
-        </div>
       </div>
       <div className="sc-timeline-scroll">
-        <div
-          className="sc-energy-canvas-container"
-          style={{ width: `${width}px`, height: `${height}px`, position: 'relative' }}
-        >
+        <div className="sc-energy-canvas-container" style={{ flex: 1, position: 'relative' }}>
+          <div className="sc-energy-toggle-group" style={{ position: 'absolute', top: 6, left: 6, zIndex: 20 }}>
+            <button 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              style={{ background: '#fff', border: '1px solid #ccc', borderRadius: 4, padding: '4px 8px', fontSize: '0.7rem', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', color: '#333', fontWeight: 600 }}
+            >
+              Layers ▼
+            </button>
+            {isDropdownOpen && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #ccc', borderRadius: 4, boxShadow: '0 4px 8px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', minWidth: 120, padding: '4px 0' }}>
+                {CURVE_LAYERS.map(layer => {
+                  if (layer.id !== 'loudness' && !hasMultiCurves) return null;
+                  const active = visibleLayers.has(layer.id);
+                  return (
+                    <label key={layer.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: '0.75rem', cursor: 'pointer', color: '#333' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={active} 
+                        onChange={() => toggleLayer(layer.id)} 
+                        style={{ margin: 0 }}
+                      />
+                      <span style={{ color: active ? `rgb(${layer.color})` : 'inherit', fontWeight: active ? 600 : 400 }}>{layer.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <canvas
             ref={canvasRef}
             className="sc-energy-canvas"

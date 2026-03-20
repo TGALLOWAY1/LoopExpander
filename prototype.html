@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Composer - Manual Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Top Section */
+        .header {
+            background: #2a2a2a;
+            padding: 16px 24px;
+            border-bottom: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .region-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .region-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            background: #404040;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: none;
+            outline: none;
+        }
+
+        .region-meta {
+            color: #aaa;
+            font-size: 14px;
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .audio-mode-selector select {
+            background: #404040;
+            color: #fff;
+            border: 1px solid #606060;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .playback-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-btn {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .control-btn:hover {
+            background: #45a049;
+        }
+
+        .control-btn.pause {
+            background: #ff6b6b;
+        }
+
+        .control-btn.pause:hover {
+            background: #ff5252;
+        }
+
+        /* Timeline Section */
+        .timeline-container {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .timeline-ruler {
+            background: #333;
+            height: 40px;
+            border-bottom: 1px solid #555;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            overflow-x: auto;
+        }
+
+        .ruler-marks {
+            display: flex;
+            position: relative;
+            min-width: 800px;
+        }
+
+        .bar-mark {
+            width: 60px;
+            height: 100%;
+            border-left: 1px solid #666;
+            display: flex;
+            align-items: center;
+            padding-left: 4px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .lanes-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: auto;
+        }
+
+        .lane {
+            min-height: 60px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            position: relative;
+        }
+
+        .lane-header {
+            width: 200px;
+            background: #2a2a2a;
+            border-right: 1px solid #404040;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .lane-name {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            margin-bottom: 4px;
+        }
+
+        .lane-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .lane-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+
+        .lane-btn {
+            background: #404040;
+            border: none;
+            color: #ccc;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .lane-timeline {
+            flex: 1;
+            position: relative;
+            background: #1e1e1e;
+            min-width: 800px;
+        }
+
+        .timeline-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+        }
+
+        .grid-bar {
+            width: 60px;
+            border-left: 1px solid #333;
+            height: 100%;
+        }
+
+        .block {
+            position: absolute;
+            height: 40px;
+            top: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 12px;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .block:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .block.active {
+            box-shadow: 0 0 0 2px #fff;
+        }
+
+        .block-label {
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .block-notes-icon {
+            margin-left: 4px;
+            opacity: 0.7;
+        }
+
+        /* Bottom Section */
+        .footer {
+            background: #2a2a2a;
+            padding: 16px 24px;
+            border-top: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .region-nav {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .nav-btn {
+            background: #404040;
+            border: none;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: #505050;
+        }
+
+        .nav-btn:disabled {
+            background: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        .footer-controls {
+            display: flex;
+            gap: 12px;
+        }
+
+        .add-lane-btn {
+            background: #2196F3;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .add-lane-btn:hover {
+            background: #1976D2;
+        }
+
+        .export-btn {
+            background: #9C27B0;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .export-btn:hover {
+            background: #7B1FA2;
+        }
+
+        /* Modals */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #2a2a2a;
+            padding: 24px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 14px;
+            color: #ccc;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #404040;
+            border: 1px solid #606060;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .form-textarea {
+            width: 100%;
+            padding: 8px 12px;
+            background: #404040;
+            border: 1px solid #606060;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #404040;
+            border: 1px solid #606060;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-secondary {
+            background: #666;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .current-region {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+
+        .waveform-placeholder {
+            background: linear-gradient(90deg, #333, #555, #333);
+            height: 20px;
+            border-radius: 2px;
+            margin-left: 12px;
+            flex: 1;
+            max-width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <div class="header">
+            <div class="region-info">
+                <input type="text" class="region-title" id="regionTitle" value="Drop 1" />
+                <div class="region-meta">
+                    <span>Bars 17-32</span> • <span>Duration: 0:30</span>
+                </div>
+                <div class="waveform-placeholder"></div>
+            </div>
+            <div class="audio-controls">
+                <div class="audio-mode-selector">
+                    <select id="audioMode">
+                        <option value="mix">Full Mix</option>
+                        <option value="drums">Drums</option>
+                        <option value="bass">Bass</option>
+                        <option value="vocals">Vocals</option>
+                        <option value="instruments">Instruments</option>
+                    </select>
+                </div>
+                <div class="playback-controls">
+                    <button class="control-btn" id="playBtn">▶ Play</button>
+                    <button class="control-btn" id="loopBtn">🔄 Loop</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="timeline-container">
+            <div class="timeline-ruler">
+                <div class="ruler-marks" id="rulerMarks"></div>
+            </div>
+            
+            <div class="lanes-container" id="lanesContainer"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="region-nav">
+                <button class="nav-btn" id="prevRegion" disabled>← Previous</button>
+                <span class="current-region" id="regionIndicator">Region 1 of 4</span>
+                <button class="nav-btn" id="nextRegion">Next →</button>
+            </div>
+            <div class="footer-controls">
+                <button class="add-lane-btn" id="addLaneBtn">+ Add Lane</button>
+                <button class="export-btn" id="exportBtn">Export JSON</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Lane Modal -->
+    <div class="modal" id="addLaneModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Add New Lane</h3>
+                <button class="close-btn" id="closeLaneModal">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Lane Name</label>
+                <input type="text" class="form-input" id="laneNameInput" placeholder="e.g. Growl Bass" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Color</label>
+                <input type="color" class="form-input" id="laneColorInput" value="#FF4A4A" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="cancelAddLane">Cancel</button>
+                <button class="btn-primary" id="confirmAddLane">Add Lane</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Block Edit Modal -->
+    <div class="modal" id="blockModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Block</h3>
+                <button class="close-btn" id="closeBlockModal">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="form-select" id="blockType">
+                    <option value="motif">Motif</option>
+                    <option value="call">Call</option>
+                    <option value="response">Response</option>
+                    <option value="variation">Variation</option>
+                    <option value="fill">Fill</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Bar</label>
+                <input type="number" class="form-input" id="blockStartBar" min="1" max="16" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Bar</label>
+                <input type="number" class="form-input" id="blockEndBar" min="1" max="16" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-textarea" id="blockNotes" placeholder="e.g. formant sweep / gritty tail"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="deleteBlock">Delete</button>
+                <button class="btn-secondary" id="cancelBlockEdit">Cancel</button>
+                <button class="btn-primary" id="saveBlockEdit">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentRegion = 0;
+        let isPlaying = false;
+        let isLooping = false;
+        let lanes = [];
+        let blocks = [];
+        let currentBlock = null;
+
+        const regions = [
+            { name: "Intro", bars: "1-8", duration: "0:15" },
+            { name: "Drop 1", bars: "17-32", duration: "0:30" },
+            { name: "Break", bars: "33-48", duration: "0:30" },
+            { name: "Drop 2", bars: "49-64", duration: "0:30" }
+        ];
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeRuler();
+            initializeSampleData();
+            updateRegionDisplay();
+            bindEvents();
+        });
+
+        function initializeRuler() {
+            const rulerMarks = document.getElementById('rulerMarks');
+            for (let i = 1; i <= 16; i++) {
+                const mark = document.createElement('div');
+                mark.className = 'bar-mark';
+                mark.textContent = i.toString();
+                rulerMarks.appendChild(mark);
+            }
+        }
+
+        function initializeSampleData() {
+            // Add sample lanes
+            lanes = [
+                {
+                    id: 'lane_1',
+                    name: 'Growl Bass',
+                    color: '#FF4A4A',
+                    collapsed: false,
+                    order: 1
+                },
+                {
+                    id: 'lane_2',
+                    name: 'Lead Synth',
+                    color: '#4ACFFF',
+                    collapsed: false,
+                    order: 2
+                },
+                {
+                    id: 'lane_3',
+                    name: 'Percussion',
+                    color: '#4AFF4A',
+                    collapsed: false,
+                    order: 3
+                }
+            ];
+
+            // Add sample blocks
+            blocks = [
+                {
+                    id: 'block_1',
+                    laneId: 'lane_1',
+                    startBar: 1,
+                    endBar: 3,
+                    type: 'call',
+                    notes: 'Deep growl with filter sweep',
+                    color: '#FF4A4A'
+                },
+                {
+                    id: 'block_2',
+                    laneId: 'lane_1',
+                    startBar: 5,
+                    endBar: 7,
+                    type: 'response',
+                    notes: 'Higher pitched response',
+                    color: '#FF7A7A'
+                },
+                {
+                    id: 'block_3',
+                    laneId: 'lane_2',
+                    startBar: 2,
+                    endBar: 4,
+                    type: 'variation',
+                    notes: 'Melodic counter-phrase',
+                    color: '#7ADFFF'
+                },
+                {
+                    id: 'block_4',
+                    laneId: 'lane_3',
+                    startBar: 1,
+                    endBar: 1.5,
+                    type: 'fill',
+                    notes: 'Snare roll',
+                    color: '#4AFF4A'
+                }
+            ];
+
+            renderLanes();
+        }
+
+        function renderLanes() {
+            const container = document.getElementById('lanesContainer');
+            container.innerHTML = '';
+
+            lanes.forEach(lane => {
+                const laneElement = createLaneElement(lane);
+                container.appendChild(laneElement);
+            });
+        }
+
+        function createLaneElement(lane) {
+            const laneDiv = document.createElement('div');
+            laneDiv.className = 'lane';
+            laneDiv.dataset.laneId = lane.id;
+
+            laneDiv.innerHTML = `
+                <div class="lane-header">
+                    <input type="text" class="lane-name" value="${lane.name}" data-lane-id="${lane.id}" />
+                    <div class="lane-controls">
+                        <input type="color" class="lane-color" value="${lane.color}" data-lane-id="${lane.id}" />
+                        <button class="lane-btn" onclick="soloLane('${lane.id}')">Solo</button>
+                        <button class="lane-btn" onclick="deleteLane('${lane.id}')">Del</button>
+                    </div>
+                </div>
+                <div class="lane-timeline" data-lane-id="${lane.id}">
+                    <div class="timeline-grid">
+                        ${Array.from({length: 16}, (_, i) => `<div class="grid-bar"></div>`).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Add blocks to this lane
+            const timeline = laneDiv.querySelector('.lane-timeline');
+            const laneBlocks = blocks.filter(block => block.laneId === lane.id);
+            
+            laneBlocks.forEach(block => {
+                const blockElement = createBlockElement(block);
+                timeline.appendChild(blockElement);
+            });
+
+            // Make timeline droppable
+            timeline.addEventListener('click', handleTimelineClick);
+
+            return laneDiv;
+        }
+
+        function createBlockElement(block) {
+            const blockDiv = document.createElement('div');
+            blockDiv.className = 'block';
+            blockDiv.dataset.blockId = block.id;
+            blockDiv.style.backgroundColor = block.color;
+            blockDiv.style.left = `${(block.startBar - 1) * 60}px`;
+            blockDiv.style.width = `${(block.endBar - block.startBar) * 60}px`;
+
+            const hasNotes = block.notes && block.notes.trim() !== '';
+            blockDiv.innerHTML = `
+                <span class="block-label">${block.type}</span>
+                ${hasNotes ? '<span class="block-notes-icon">📝</span>' : ''}
+            `;
+
+            blockDiv.addEventListener('click', (e) => {
+                e.stopPropagation();
+                playBlock(block);
+                openBlockModal(block);
+            });
+
+            return blockDiv;
+        }
+
+        function handleTimelineClick(e) {
+            if (e.target.classList.contains('lane-timeline') || e.target.classList.contains('grid-bar')) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const bar = Math.floor(x / 60) + 1;
+                
+                if (bar >= 1 && bar <= 16) {
+                    const laneId = e.currentTarget.dataset.laneId;
+                    createBlock(laneId, bar);
+                }
+            }
+        }
+
+        function createBlock(laneId, startBar) {
+            const lane = lanes.find(l => l.id === laneId);
+            if (!lane) return;
+
+            const newBlock = {
+                id: `block_${Date.now()}`,
+                laneId: laneId,
+                startBar: startBar,
+                endBar: startBar + 1,
+                type: 'motif',
+                notes: '',
+                color: lane.color
+            };
+
+            blocks.push(newBlock);
+            renderLanes();
+        }
+
+        function playBlock(block) {
+            // Clear any existing active blocks
+            document.querySelectorAll('.block.active').forEach(b => {
+                b.classList.remove('active');
+            });
+
+            // Mark this block as active
+            const blockElement = document.querySelector(`[data-block-id="${block.id}"]`);
+            if (blockElement) {
+                blockElement.classList.add('active');
+            }
+
+            // Simulate audio playback
+            console.log(`Playing block: ${block.type} from bar ${block.startBar} to ${block.endBar}`);
+            
+            // Remove active state after 2 seconds
+            setTimeout(() => {
+                if (blockElement) {
+                    blockElement.classList.remove('active');
+                }
+            }, 2000);
+        }
+
+        function openBlockModal(block) {
+            currentBlock = block;
+            document.getElementById('blockType').value = block.type;
+            document.getElementById('blockStartBar').value = block.startBar;
+            document.getElementById('blockEndBar').value = block.endBar;
+            document.getElementById('blockNotes').value = block.notes || '';
+            document.getElementById('blockModal').classList.add('active');
+        }
+
+        function updateRegionDisplay() {
+            const region = regions[currentRegion];
+            document.getElementById('regionTitle').value = region.name;
+            document.querySelector('.region-meta').innerHTML = 
+                `<span>Bars ${region.bars}</span> • <span>Duration: ${region.duration}</span>`;
+            document.getElementById('regionIndicator').textContent = 
+                `Region ${currentRegion + 1} of ${regions.length}`;
+            
+            // Update navigation buttons
+            document.getElementById('prevRegion').disabled = currentRegion === 0;
+            document.getElementById('nextRegion').disabled = currentRegion === regions.length - 1;
+        }
+
+        function bindEvents() {
+            // Playback controls
+            document.getElementById('playBtn').addEventListener('click', togglePlayback);
+            document.getElementById('loopBtn').addEventListener('click', toggleLoop);
+
+            // Region navigation
+            document.getElementById('prevRegion').addEventListener('click', () => {
+                if (currentRegion > 0) {
+                    currentRegion--;
+                    updateRegionDisplay();
+                }
+            });
+
+            document.getElementById('nextRegion').addEventListener('click', () => {
+                if (currentRegion < regions.length - 1) {
+                    currentRegion++;
+                    updateRegionDisplay();
+                }
+            });
+
+            // Lane management
+            document.getElementById('addLaneBtn').addEventListener('click', () => {
+                document.getElementById('addLaneModal').classList.add('active');
+            });
+
+            document.getElementById('closeLaneModal').addEventListener('click', () => {
+                document.getElementById('addLaneModal').classList.remove('active');
+            });
+
+            document.getElementById('cancelAddLane').addEventListener('click', () => {
+                document.getElementById('addLaneModal').classList.remove('active');
+            });
+
+            document.getElementById('confirmAddLane').addEventListener('click', addLane);
+
+            // Block modal
+            document.getElementById('closeBlockModal').addEventListener('click', closeBlockModal);
+            document.getElementById('cancelBlockEdit').addEventListener('click', closeBlockModal);
+            document.getElementById('saveBlockEdit').addEventListener('click', saveBlockEdit);
+            document.getElementById('deleteBlock').addEventListener('click', deleteBlock);
+
+            // Export
+            document.getElementById('exportBtn').addEventListener('click', exportAnnotations);
+
+            // Lane name changes
+            document.addEventListener('input', (e) => {
+                if (e.target.classList.contains('lane-name')) {
+                    const laneId = e.target.dataset.laneId;
+                    const lane = lanes.find(l => l.id === laneId);
+                    if (lane) {
+                        lane.name = e.target.value;
+                    }
+                }
+            });
+
+            // Lane color changes
+            document.addEventListener('change', (e) => {
+                if (e.target.classList.contains('lane-color')) {
+                    const laneId = e.target.dataset.laneId;
+                    const lane = lanes.find(l => l.id === laneId);
+                    if (lane) {
+                        lane.color = e.target.value;
+                        // Update blocks in this lane
+                        blocks.filter(b => b.laneId === laneId).forEach(block => {
+                            block.color = e.target.value;
+                        });
+                        renderLanes();
+                    }
+                }
+            });
+
+            // Close modals on backdrop click
+            document.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    e.target.classList.remove('active');
+                }
+            });
+        }
+
+        function togglePlayback() {
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('playBtn');
+            if (isPlaying) {
+                btn.textContent = '⏸ Pause';
+                btn.classList.add('pause');
+                console.log('Playing region:', regions[currentRegion].name);
+            } else {
+                btn.textContent = '▶ Play';
+                btn.classList.remove('pause');
+                console.log('Paused');
+            }
+        }
+
+        function toggleLoop() {
+            isLooping = !isLooping;
+            const btn = document.getElementById('loopBtn');
+            btn.style.background = isLooping ? '#ff9800' : '#404040';
+            console.log('Loop:', isLooping ? 'ON' : 'OFF');
+        }
+
+        function addLane() {
+            const name = document.getElementById('laneNameInput').value.trim();
+            const color = document.getElementById('laneColorInput').value;
+
+            if (!name) {
+                alert('Please enter a lane name');
+                return;
+            }
+
+            const newLane = {
+                id: `lane_${Date.now()}`,
+                name: name,
+                color: color,
+                collapsed: false,
+                order: lanes.length + 1
+            };
+
+            lanes.push(newLane);
+            renderLanes();
+
+            // Reset form and close modal
+            document.getElementById('laneNameInput').value = '';
+            document.getElementById('laneColorInput').value = '#FF4A4A';
+            document.getElementById('addLaneModal').classList.remove('active');
+        }
+
+        function soloLane(laneId) {
+            console.log('Soloing lane:', laneId);
+            // In a real implementation, this would isolate the corresponding stem
+        }
+
+        function deleteLane(laneId) {
+            if (confirm('Are you sure you want to delete this lane and all its blocks?')) {
+                lanes = lanes.filter(l => l.id !== laneId);
+                blocks = blocks.filter(b => b.laneId !== laneId);
+                renderLanes();
+            }
+        }
+
+        function closeBlockModal() {
+            document.getElementById('blockModal').classList.remove('active');
+            currentBlock = null;
+        }
+
+        function saveBlockEdit() {
+            if (!currentBlock) return;
+
+            currentBlock.type = document.getElementById('blockType').value;
+            currentBlock.startBar = parseFloat(document.getElementById('blockStartBar').value);
+            currentBlock.endBar = parseFloat(document.getElementById('blockEndBar').value);
+            currentBlock.notes = document.getElementById('blockNotes').value;
+
+            renderLanes();
+            closeBlockModal();
+        }
+
+        function deleteBlock() {
+            if (!currentBlock) return;
+
+            if (confirm('Are you sure you want to delete this block?')) {
+                blocks = blocks.filter(b => b.id !== currentBlock.id);
+                renderLanes();
+                closeBlockModal();
+            }
+        }
+
+        function exportAnnotations() {
+            const annotations = {
+                projectId: 'demo_project',
+                regions: regions.map((region, index) => ({
+                    regionId: `r${index + 1}`,
+                    name: region.name,
+                    bars: region.bars,
+                    lanes: lanes,
+                    blocks: blocks,
+                    notes: index === currentRegion ? 'Current region with sample annotations' : ''
+                }))
+            };
+
+            const dataStr = JSON.stringify(annotations, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'visual_composer_annotations.json';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                togglePlayback();
+            }
+        });
+    </script>
+</body>
+</html>
