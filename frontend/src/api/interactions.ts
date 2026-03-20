@@ -10,6 +10,7 @@ export interface InteractionLabel {
   startBar: number;
   endBar: number;
   label: string;
+  role?: string | null;
   color: string | null;
   notes: string | null;
 }
@@ -25,6 +26,7 @@ export interface InteractionLabelCreate {
   startBar: number;
   endBar: number;
   label: string;
+  role?: string | null;
   color?: string | null;
   notes?: string | null;
 }
